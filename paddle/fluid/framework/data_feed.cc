@@ -852,6 +852,11 @@ bool MultiSlotInMemoryDataFeed::ParseOneInstanceFromPipe(Record* instance) {
       uint32_t cmatch;
       uint32_t rank;
       GetMsgFromLogKey(log_key, &search_id, &cmatch, &rank);
+
+      VLOG(3) << "search_id " << search_id;
+      VLOG(3) << "cmatch " << cmatch;
+      VLOG(3) << "rank " << rank;
+
       instance->search_id = search_id;
       instance->cmatch = cmatch;
       instance->rank = rank;
@@ -1344,22 +1349,24 @@ void TwoPhaseDataFeed::GetRankOffset(const std::vector<PvInstance>& pv_vec,
       auto& ins = pv_ins.ads[j];
       int rank = -1;
       if ((ins.cmatch == 222 || ins.cmatch == 223) &&
-          ins.rank <= static_cast<uint64_t>(max_rank) && ins.rank != 0) {
+          ins.rank <= static_cast<uint32_t>(max_rank) && ins.rank != 0) {
         rank = ins.rank;
       }
 
       rank_offset_mat[index * col] = rank;
       if (rank > 0) {
         for (int k = 0; k < ad_num; ++k) {
-          int fast_rank = pv_ins.ads[k].rank;
-          if (fast_rank > 3) {
-            // std::cerr << "fast_rank  " << fast_rank << std::endl;
-            fast_rank = 3;
+          auto& cur_ins = pv_ins.ads[k];
+          int fast_rank = -1;
+          if ((cur_ins.cmatch == 222 || cur_ins.cmatch == 223) &&
+              cur_ins.rank <= static_cast<uint32_t>(max_rank) &&
+              cur_ins.rank != 0) {
+            fast_rank = cur_ins.rank;
           }
-          // CHECK(fast_rank <= 3);
+
           if (fast_rank > 0) {
             int m = fast_rank - 1;
-            rank_offset_mat[index * col + 2 * m + 1] = pv_ins.ads[k].rank;
+            rank_offset_mat[index * col + 2 * m + 1] = cur_ins.rank;
             rank_offset_mat[index * col + 2 * m + 2] = index_start + k;
           }
         }
@@ -1367,7 +1374,7 @@ void TwoPhaseDataFeed::GetRankOffset(const std::vector<PvInstance>& pv_vec,
       index += 1;
     }
   }
-  // VLOG(3) << "rank_offset_mat  " << rank_offset_mat.size();
+
   int* rank_offset = rank_offset_mat.data();
   int* tensor_ptr = rank_offset_->mutable_data<int>({row, col}, this->place_);
   CopyToFeedTensor(tensor_ptr, rank_offset, row * col * sizeof(int));
@@ -1382,7 +1389,7 @@ void TwoPhaseDataFeed::AssignFeedVar(const Scope& scope) {
 
 void TwoPhaseDataFeed::PutToFeedVec(const std::vector<PvInstance>& pv_vec) {
   // Todo get rank_offset msg
-  // CHECK_EQ(GetCurrentPhase() == 1);
+  // int pv_num = pv_vec.size();
   int ins_number = 0;
   std::vector<Record> ins_vec;
   for (auto& pv : pv_vec) {

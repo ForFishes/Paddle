@@ -120,10 +120,6 @@ class Dataset {
   virtual int64_t GetShuffleDataSize() = 0;
   // merge by ins id
   virtual void MergeByInsId() = 0;
-  // shuffle by Pv instane
-  virtual void ShufflePVInstance() = 0;
-  // sort by search_id
-  virtual void SortBySearchId() = 0;
   // merge pv instance
   virtual void Merge_Pv_Instance() = 0;
   // divide pv instance
@@ -204,8 +200,6 @@ class DatasetImpl : public Dataset {
   virtual int64_t GetMemoryDataSize();
   virtual int64_t GetShuffleDataSize();
   virtual void MergeByInsId() {}
-  virtual void ShufflePVInstance() {}
-  virtual void SortBySearchId() {}
   virtual void Merge_Pv_Instance() {}
   virtual void Divide_Pv_Instance() {}
   virtual void GenerateLocalTablesUnlock(int table_id, int feadim,
@@ -272,8 +266,6 @@ class MultiSlotDataset : public DatasetImpl<Record> {
  public:
   MultiSlotDataset() {}
   virtual void MergeByInsId();
-  virtual void ShufflePVInstance();
-  virtual void SortBySearchId();
   virtual void Merge_Pv_Instance();
   virtual void Divide_Pv_Instance();
   virtual void GenerateLocalTablesUnlock(int table_id, int feadim,

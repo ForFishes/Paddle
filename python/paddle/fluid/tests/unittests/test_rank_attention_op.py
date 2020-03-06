@@ -14,6 +14,7 @@
 
 import unittest
 import numpy as np
+import random
 from op_test import OpTest
 import paddle.fluid as fluid
 from paddle.fluid import Program, program_guard
@@ -23,37 +24,63 @@ import paddle.fluid.core as core
 
 def gen_input_help(input, rank_offset, max_rank):
     input_row, input_col = input.shape
-    input_help = np.zeros((input_row, max_rank * input_col))
+    input_help = np.zeros((input_row * max_rank * input_col, ))
     ins_rank = np.zeros((input_row, 1))
-    for ins in range(input_row):
-        temp = []
-        ins_rank[ins] = rank_offset[ins, 0]
-        for k in range(max_rank):
-            rank_msg = rank_offset[ins, k * 2 + 2]
-            if rank_msg >= 0:
-                temp.extend(input[int(rank_msg), :])
-            else:
-                temp.extend(list(np.zeros(input_col)))
-        input_help[ins, :] = temp
+    ins_rank.fill(-1)
+
+    output_col = max_rank * input_col
+    output_row = input_row
+
+    for idx in range(output_col * output_row):
+        output_col_idx = idx % output_col
+        output_row_idx = int(idx / output_col)
+        k = int(output_col_idx / input_col)
+        faster = rank_offset[output_row_idx, 2 * k + 1] - 1
+
+        if output_col_idx == 0:
+            ins_rank[output_row_idx] = rank_offset[output_row_idx, 0]
+
+        if rank_offset[output_row_idx, 0] - 1 < 0 or faster < 0:
+            continue
+
+        rank_input_col_idx = output_col_idx % input_col
+        index = rank_offset[output_row_idx, 2 * k + 2]
+        input_help[idx] = input[index, rank_input_col_idx]
+    input_help = input_help.reshape([input_row, max_rank * input_col])
+
     return input_help, ins_rank
 
 
-def gen_param_help(input, rank_offset, rank_para, max_rank):
+def gen_param_help(input, rank_offset, param, max_rank):
     input_row, input_col = input.shape
-    _, rank_para_col = rank_para.shape
-    block_matrix_row = input_col * max_rank
-    param_help = np.zeros((block_matrix_row * input_row, rank_para_col))
+    rank_offset_row, rank_offset_col = rank_offset.shape
+    param_row, param_col = param.shape
 
-    for ins in range(input_row):
-        start_index = ins * block_matrix_row
-        block_temp = np.zeros((block_matrix_row, rank_para_col))
-        for k in range(max_rank):
-            if rank_offset[ins, k * 2 + 2] >= 0:
-                start = rank_offset[ins, 0] * max_rank + k
-                block_temp[int(k * input_col):int((k + 1) * input_col),:] = \
-                    rank_para[int(start * input_col): int(start * input_col + input_col), :]
-        param_help[start_index:start_index + block_matrix_row] = block_temp
-    return param_help
+    block_matrix_row = input_col * max_rank
+
+    output_param_row = block_matrix_row * input_row
+    output_param_col = param_col
+
+    output_param = np.zeros((output_param_row * output_param_col, ))
+
+    for idx in range(output_param_row * output_param_col):
+        output_col_idx = idx % output_param_col
+        output_row_idx = int(idx / output_param_col)
+        ins_idx = int(output_row_idx / block_matrix_row)
+        start_offset = output_row_idx % block_matrix_row
+        k = int(start_offset / input_col)
+        k_offset = start_offset % input_col
+
+        lower = rank_offset[ins_idx, 0] - 1
+        faster = rank_offset[ins_idx, 2 * k + 1] - 1
+        if lower < 0 or faster < 0:
+            continue
+        start = lower * max_rank + faster
+        ori_idx = start * param_col * input_col + k_offset * param_col + output_col_idx
+        output_param[idx] = param[int(ori_idx / param_col), ori_idx % param_col]
+
+    output_param = output_param.reshape([output_param_row, output_param_col])
+    return output_param
 
 
 def np_rank_attention(input, rank_offset, rank_para, max_rank):
@@ -78,26 +105,44 @@ def np_rank_attention(input, rank_offset, rank_para, max_rank):
 
 
 def gen_rank_offset(pv_nums, max_rank):
-    rank_offset = []
     all_ins_num = 0
+    pv_rank_msg = []
     for _ in range(pv_nums):
-        ins_pv = np.random.randint(1, max_rank + 1)
-        for ins in range(ins_pv):
-            temp = []
-            fir_col = all_ins_num
-            se_col = fir_col + 1
-            th_col = se_col + 1
-            if ins_pv == 1:
-                se_col = -1
-                th_col = -1
-            elif ins_pv == 2:
-                th_col = -1
-            temp = [ins, 0, fir_col, 1, se_col, 2, th_col]
-            rank_offset.append(temp)
-        all_ins_num += ins_pv
+        ins_pv = np.random.randint(1, max_rank + 2)  # 1~4
+        rank_list = list(range(1, ins_pv + 1))
+        random.shuffle(rank_list)
+        all_ins_num = all_ins_num + ins_pv
+        pv_rank_msg.append(rank_list)
+
+    rank_offset = np.zeros((all_ins_num, max_rank * 2 + 1)).astype("int32")
+    rank_offset.fill(-1)
+    index = 0
+    for pv_number in range(len(pv_rank_msg)):
+        pv_ins = pv_rank_msg[pv_number]
+        ad_num = len(pv_ins)
+        index_start = index
+
+        for j in range(ad_num):
+            rank = -1
+            if pv_ins[j] <= max_rank:
+                rank = pv_ins[j]
+            rank_offset[index, 0] = rank
+
+            if rank > 0:
+                for k in range(ad_num):
+                    fast_rank = -1
+                    if pv_ins[k] <= max_rank:
+                        fast_rank = pv_ins[k]
+                    if fast_rank > 0:
+                        m = fast_rank - 1
+                        rank_offset[index, 2 * m + 1] = pv_ins[k]
+                        rank_offset[index, 2 * m + 2] = index_start + k
+            index = index + 1
     return all_ins_num, rank_offset
 
 
+#@skip_check_grad_ci(
+#    reason="[skip shape check] Use y_shape(1) to test broadcast.")
 class TestRankAttentionOpComplex(OpTest):
     def config(self):
         self.pv_num = 100
@@ -119,7 +164,7 @@ class TestRankAttentionOpComplex(OpTest):
             input, np.array(rank_offset), rank_para, self.max_rank)
         self.inputs = {
             "X": input,
-            "RankOffset": np.array(rank_offset).astype(self.dtype),
+            "RankOffset": np.array(rank_offset).astype("int32"),
             "RankParam": rank_para
         }
         self.attrs = {'MaxRank': self.max_rank}
@@ -136,7 +181,7 @@ class TestRankAttentionOpComplex(OpTest):
 
     def test_check_output(self):
         #self.check_output()
-        self.check_grad_with_place(core.CUDAPlace(0), ["X", "RankParam"], "Out")
+        self.check_grad_with_place(core.CUDAPlace(0), ["RankParam"], "Out")
 
 
 if __name__ == "__main__":
