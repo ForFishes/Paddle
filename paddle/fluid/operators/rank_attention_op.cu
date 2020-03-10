@@ -117,11 +117,11 @@ template <typename DeviceContext, typename T>
 class RankAttentionGradOpCUDAKernel : public framework::OpKernel<T> {
  public:
   void Compute(const framework::ExecutionContext &ctx) const override {
-    auto *X = ctx.Input<Tensor>("X");
-    auto *rank_offset = ctx.Input<Tensor>("RankOffset");
-    auto *param = ctx.Input<Tensor>("RankParam");
+    auto *X = ctx.Input<Tensor>("X");                     // not use data
+    auto *rank_offset = ctx.Input<Tensor>("RankOffset");  // not use data
+    auto *param = ctx.Input<Tensor>("RankParam");         // not use data
     auto *input_help = ctx.Input<Tensor>("InputHelp");
-    auto *param_help = ctx.Input<Tensor>("ParamHelp");
+    // auto *param_help = ctx.Input<Tensor>("ParamHelp");
     auto *ins_rank = ctx.Input<Tensor>("InsRank");
     auto *dout = ctx.Input<Tensor>(framework::GradVarName("Out"));
 
@@ -173,7 +173,7 @@ class RankAttentionGradOpCUDAKernel : public framework::OpKernel<T> {
 
     // get data ptr
     const T *input_help_data = input_help->data<T>();
-    const T *param_help_data = param_help->data<T>();
+    // const T *param_help_data = param_help->data<T>();
     const T *ins_rank_data = ins_rank->data<T>();
     // T *input_grad_data = input_grad.data<T>();
     T *param_grad_data = param_grad.data<T>();

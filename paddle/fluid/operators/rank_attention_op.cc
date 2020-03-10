@@ -95,9 +95,9 @@ class RankAttentionGradOp : public framework::OperatorWithKernel {
     PADDLE_ENFORCE_EQ(ctx->HasInput("InputHelp"), true,
                       platform::errors::InvalidArgument(
                           "Input(InputHelp) should not be null"));
-    PADDLE_ENFORCE_EQ(ctx->HasInput("ParamHelp"), true,
-                      platform::errors::InvalidArgument(
-                          "Input(ParamHelp) should not be null"));
+    // PADDLE_ENFORCE_EQ(ctx->HasInput("ParamHelp"), true,
+    //                  platform::errors::InvalidArgument(
+    //                      "Input(ParamHelp) should not be null"));
     PADDLE_ENFORCE_EQ(
         ctx->HasInput("InsRank"), true,
         platform::errors::InvalidArgument("Input(InsRank) should not be null"));
@@ -152,7 +152,7 @@ class RankAttentionGradOpMaker : public framework::SingleGradOpMaker<T> {
     op->SetInput("RankOffset", this->Input("RankOffset"));
     op->SetInput("RankParam", this->Input("RankParam"));
     op->SetInput("InputHelp", this->Output("InputHelp"));
-    op->SetInput("ParamHelp", this->Output("ParamHelp"));
+    // op->SetInput("ParamHelp", this->Output("ParamHelp"));
     op->SetInput("InsRank", this->Output("InsRank"));
     op->SetInput(framework::GradVarName("Out"), this->OutputGrad("Out"));
 
@@ -164,6 +164,10 @@ class RankAttentionGradOpMaker : public framework::SingleGradOpMaker<T> {
   }
 };
 
+DECLARE_NO_NEED_BUFFER_VARS_INFERENCE(
+    RankAttentionGradOpNoNeedBufferVarsInference, "X", "RankOffset",
+    "RankParam");
+
 }  // namespace operators
 }  // namespace paddle
 
@@ -172,7 +176,8 @@ REGISTER_OPERATOR(rank_attention, ops::RankAttentionOp,
                   ops::RankAttentionOpMaker,
                   ops::RankAttentionGradOpMaker<paddle::framework::OpDesc>,
                   ops::RankAttentionGradOpMaker<paddle::imperative::OpBase>);
-REGISTER_OPERATOR(rank_attention_grad, ops::RankAttentionGradOp);
+REGISTER_OPERATOR(rank_attention_grad, ops::RankAttentionGradOp,
+                  ops::RankAttentionGradOpNoNeedBufferVarsInference);
 
 REGISTER_OP_CPU_KERNEL(
     rank_attention,
