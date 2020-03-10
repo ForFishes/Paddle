@@ -98,11 +98,8 @@ struct Record {
 struct PvInstance {
   std::vector<Record> ads;
   uint64_t search_id_;
-  // void set_pv_id(uint64_t search_id){
-  //  search_id_ = search_id;
-  //}
-  void merge_instance(Record ins) {
-    ads.push_back(ins);
+  void merge_instance(const Record& ins) {
+    ads.emplace_back(ins);
     search_id_ = ins.search_id;
   }
 };
@@ -616,6 +613,7 @@ class TwoPhaseDataFeed : public MultiSlotInMemoryDataFeed {
   virtual void GetRankOffset(const std::vector<PvInstance>& pv_vec,
                              int ins_number);
   std::string rank_offset_name;
+  int pv_batch_size_;
 };
 
 #if defined(PADDLE_WITH_CUDA) && !defined(_WIN32)

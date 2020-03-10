@@ -709,6 +709,11 @@ int64_t DatasetImpl<T>::GetMemoryDataSize() {
 }
 
 template <typename T>
+int64_t DatasetImpl<T>::GetPvDataSize() {
+  return input_pv_channel_->Size();
+}
+
+template <typename T>
 int64_t DatasetImpl<T>::GetShuffleDataSize() {
   int64_t sum = 0;
   for (size_t i = 0; i < multi_output_channel_.size(); ++i) {
@@ -803,24 +808,34 @@ void MultiSlotDataset::Merge_Pv_Instance() {
   std::vector<Record> ins_data;
   std::vector<PvInstance> pv_data;
   input_channel_->ReadAll(ins_data);
-  std::sort(ins_data.data(), ins_data.data() + ins_data.size(),
-            [](const Record& lhs, const Record& rhs) {
-              return lhs.search_id < rhs.search_id;
-            });
-  uint64_t last_search_id = 0;
-  for (size_t i = 0; i < ins_data.size(); ++i) {
-    Record& ins = ins_data[i];
-    if (i == 0 || last_search_id != ins.search_id) {
-      PvInstance pv_instance;
-      pv_instance.merge_instance(ins);
-      pv_data.push_back(pv_instance);
-      last_search_id = ins.search_id;
-      continue;
+
+  // construct map <search_id, index>
+  std::unordered_map<uint64_t, std::vector<size_t>> sid_index;
+  std::vector<uint64_t> all_search_id;
+
+  for (size_t index = 0; index < ins_data.size(); ++index) {
+    uint64_t sid = ins_data[index].search_id;
+    if (sid_index.find(sid) != sid_index.end()) {
+      sid_index[sid].emplace_back(index);
+    } else {
+      sid_index.emplace(sid, std::vector<size_t>(1, index));
+      all_search_id.emplace_back(sid);
     }
-    pv_data.back().merge_instance(ins);
   }
 
-  std::shuffle(pv_data.begin(), pv_data.end(), fleet_ptr->LocalRandomEngine());
+  auto all_ins_num = ins_data.size();
+  auto all_pv_num = all_search_id.size();
+  VLOG(0) << "ins_num : " << all_ins_num << " merge to pv_num " << all_pv_num;
+
+  std::shuffle(all_search_id.begin(), all_search_id.end(),
+               fleet_ptr->LocalRandomEngine());
+  for (auto& sid : all_search_id) {
+    PvInstance pv_instance;
+    for (auto& index : sid_index[sid]) {
+      pv_instance.merge_instance(ins_data[index]);
+    }
+    pv_data.emplace_back(pv_instance);
+  }
 
   input_pv_channel_->Open();
   input_pv_channel_->Write(std::move(pv_data));

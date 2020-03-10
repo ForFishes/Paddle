@@ -141,8 +141,6 @@ def gen_rank_offset(pv_nums, max_rank):
     return all_ins_num, rank_offset
 
 
-#@skip_check_grad_ci(
-#    reason="[skip shape check] Use y_shape(1) to test broadcast.")
 class TestRankAttentionOpComplex(OpTest):
     def config(self):
         self.pv_num = 100

@@ -116,6 +116,8 @@ class Dataset {
   virtual void DestroyReaders() = 0;
   // get memory data size
   virtual int64_t GetMemoryDataSize() = 0;
+  // get memory data size in input_pv_channel_
+  virtual int64_t GetPvDataSize() = 0;
   // get shuffle data size
   virtual int64_t GetShuffleDataSize() = 0;
   // merge by ins id
@@ -198,6 +200,7 @@ class DatasetImpl : public Dataset {
   virtual void CreateReaders();
   virtual void DestroyReaders();
   virtual int64_t GetMemoryDataSize();
+  virtual int64_t GetPvDataSize();
   virtual int64_t GetShuffleDataSize();
   virtual void MergeByInsId() {}
   virtual void Merge_Pv_Instance() {}

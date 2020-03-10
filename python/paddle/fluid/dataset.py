@@ -167,6 +167,23 @@ class DatasetBase(object):
         """
         self.proto_desc.batch_size = batch_size
 
+    def set_pv_batch(self, pv_batch_size):
+        """
+        Set batch size. Will be effective during training
+
+        Examples:
+            .. code-block:: python
+
+              import paddle.fluid as fluid
+              dataset = fluid.DatasetFactory().create_dataset()
+              dataset.set_pv_batch(128)
+
+        Args:
+            pv_batch_size(int): pv batch size
+
+        """
+        self.proto_desc.pv_batch_size = pv_batch_size
+
     def set_thread(self, thread_num):
         """
         Set thread num, it is the num of readers.
@@ -668,6 +685,10 @@ class InMemoryDataset(DatasetBase):
 
         """
         self.dataset.release_memory()
+
+    # FIXME for wasq
+    def get_pv_data_size(self):
+        return self.dataset.get_pv_data_size()
 
     def get_memory_data_size(self, fleet=None):
         """

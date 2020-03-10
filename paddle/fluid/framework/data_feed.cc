@@ -1294,8 +1294,8 @@ int TwoPhaseDataFeed::Next() {
     int index = 0;
     PvInstance pv_instance;
     std::vector<PvInstance> pv_vec;
-    pv_vec.reserve(this->default_batch_size_);
-    while (index < this->default_batch_size_) {
+    pv_vec.reserve(this->pv_batch_size_);
+    while (index < this->pv_batch_size_) {
       if (output_pv_channel_->Size() == 0) {
         break;
       }
@@ -1327,6 +1327,7 @@ int TwoPhaseDataFeed::Next() {
 void TwoPhaseDataFeed::Init(const DataFeedDesc& data_feed_desc) {
   MultiSlotInMemoryDataFeed::Init(data_feed_desc);
   rank_offset_name = data_feed_desc.rank_offset();
+  pv_batch_size_ = data_feed_desc.pv_batch_size();
 }
 
 void TwoPhaseDataFeed::GetRankOffset(const std::vector<PvInstance>& pv_vec,

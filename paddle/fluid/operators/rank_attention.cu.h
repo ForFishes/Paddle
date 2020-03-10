@@ -132,7 +132,7 @@ __global__ void merge_param_gradient_kernel(
 
     T tmp = 0;
     for (int i = 0; i < ins_num; ++i) {
-      if (ins_rank[i] == rank_idx) {
+      if (ins_rank[i] == rank_idx + 1) {
         int row = i * block_matrix_row + rank_offset;
         tmp += expanded_grad[row * expanded_grad_col + param_col_idx];
       }
