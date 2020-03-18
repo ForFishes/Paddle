@@ -1401,6 +1401,8 @@ void TwoPhaseDataFeed::PutToFeedVec(const std::vector<PvInstance>& pv_vec) {
   }
   GetRankOffset(pv_vec, ins_number);
   VLOG(3) << "Rank offset is obtained.. ins_number is " << ins_number;
+  VLOG(3) << "Current thread id [" << thread_id_ << "] has " << ins_number
+          << "instances, has " << pv_vec.size() << " pvs";
   MultiSlotInMemoryDataFeed::PutToFeedVec(ins_vec);
 }
 

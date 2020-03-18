@@ -33,7 +33,6 @@ class RankAttentionCUDAKernel : public framework::OpKernel<T> {
     auto *rank_offset = ctx.Input<Tensor>("RankOffset");
     auto *param = ctx.Input<Tensor>("RankParam");
     auto *input_help = ctx.Output<Tensor>("InputHelp");
-    auto *param_help = ctx.Output<Tensor>("ParamHelp");
     auto *ins_rank = ctx.Output<Tensor>("InsRank");
     int max_rank = ctx.Attr<int>("MaxRank");
     auto *Out = ctx.Output<Tensor>("Out");
@@ -60,13 +59,17 @@ class RankAttentionCUDAKernel : public framework::OpKernel<T> {
 
     auto &dev_ctx = ctx.template device_context<platform::CUDADeviceContext>();
 
-    param_help->mutable_data<T>(ctx.GetPlace());
+    Tensor param_help;
+    param_help = ctx.AllocateTmpTensor<T, DeviceContext>(
+        {ins_num * block_matrix_row, para_col}, dev_ctx);
+    param_help.mutable_data<T>(ctx.GetPlace());
+
     input_help->mutable_data<T>(ctx.GetPlace());
     ins_rank->mutable_data<T>(ctx.GetPlace());
     Out->mutable_data<T>(ctx.GetPlace());
 
     // initialize
-    auto param_help_eigen = framework::EigenVector<T>::Flatten(*param_help);
+    auto param_help_eigen = framework::EigenVector<T>::Flatten(param_help);
     auto input_help_eigen = framework::EigenVector<T>::Flatten(*input_help);
     auto ins_rank_eigen = framework::EigenVector<T>::Flatten(*ins_rank);
     auto out_eigen = framework::EigenVector<T>::Flatten(*Out);
@@ -83,7 +86,7 @@ class RankAttentionCUDAKernel : public framework::OpKernel<T> {
 
     // get data ptr
     T *input_help_data = input_help->data<T>();
-    T *param_help_data = param_help->data<T>();
+    T *param_help_data = param_help.data<T>();
     T *ins_rank_data = ins_rank->data<T>();
     T *out_data = Out->data<T>();
 

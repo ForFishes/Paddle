@@ -46,6 +46,7 @@ DatasetImpl<T>::DatasetImpl() {
   fleet_send_batch_size_ = 1024;
   fleet_send_sleep_seconds_ = 0;
   merge_by_insid_ = false;
+  merge_by_sid_ = true;
   merge_size_ = 2;
   parse_ins_id_ = false;
   parse_content_ = false;
@@ -137,6 +138,11 @@ void DatasetImpl<T>::SetMergeByInsId(int merge_size) {
   merge_by_insid_ = true;
   parse_ins_id_ = true;
   merge_size_ = merge_size;
+}
+
+template <typename T>
+void DatasetImpl<T>::SetMergeBySid(bool is_merge) {
+  merge_by_sid_ = is_merge;
 }
 
 template <typename T>
@@ -812,35 +818,62 @@ void MultiSlotDataset::Merge_Pv_Instance() {
   // construct map <search_id, index>
   std::unordered_map<uint64_t, std::vector<size_t>> sid_index;
   std::vector<uint64_t> all_search_id;
+  std::vector<size_t> all_index;
 
-  for (size_t index = 0; index < ins_data.size(); ++index) {
-    uint64_t sid = ins_data[index].search_id;
-    if (sid_index.find(sid) != sid_index.end()) {
-      sid_index[sid].emplace_back(index);
-    } else {
-      sid_index.emplace(sid, std::vector<size_t>(1, index));
-      all_search_id.emplace_back(sid);
+  if (merge_by_sid_) {
+    for (size_t index = 0; index < ins_data.size(); ++index) {
+      uint64_t sid = ins_data[index].search_id;
+      // int rank = ins_data[index].rank;  // 1~4
+      // assert(rank <= 5);
+      if (sid_index.find(sid) != sid_index.end()) {
+        sid_index[sid].emplace_back(index);
+        // sid_index[sid][rank - 1] = index;
+      } else {
+        sid_index.emplace(sid, std::vector<size_t>(1, index));
+        // sid_index.emplace(sid, std::vector<int>(5, -1));
+        // sid_index[sid][rank - 1] = index;
+        all_search_id.emplace_back(sid);
+      }
+    }
+  } else {
+    for (size_t index = 0; index < ins_data.size(); ++index) {
+      all_index.emplace_back(index);
     }
   }
 
   auto all_ins_num = ins_data.size();
-  auto all_pv_num = all_search_id.size();
-  VLOG(0) << "ins_num : " << all_ins_num << " merge to pv_num " << all_pv_num;
+  // auto all_pv_num = all_search_id.size();
 
-  std::shuffle(all_search_id.begin(), all_search_id.end(),
-               fleet_ptr->LocalRandomEngine());
-  for (auto& sid : all_search_id) {
-    PvInstance pv_instance;
-    for (auto& index : sid_index[sid]) {
-      pv_instance.merge_instance(ins_data[index]);
+  auto all_pv_num = (merge_by_sid_ ? all_search_id.size() : all_index.size());
+
+  VLOG(0) << "ins_num  " << all_ins_num << " merge to pv_num " << all_pv_num;
+
+  if (merge_by_sid_) {
+    std::shuffle(all_search_id.begin(), all_search_id.end(),
+                 fleet_ptr->LocalRandomEngine());
+    for (auto& sid : all_search_id) {
+      PvInstance pv_instance;
+      for (auto& index : sid_index[sid]) {
+        // if(index < 0)
+        //  continue;
+        pv_instance.merge_instance(ins_data[index]);
+      }
+      pv_data.emplace_back(pv_instance);
     }
-    pv_data.emplace_back(pv_instance);
+  } else {
+    std::shuffle(all_index.begin(), all_index.end(),
+                 fleet_ptr->LocalRandomEngine());
+    for (auto index : all_index) {
+      PvInstance pv_instance;
+      pv_instance.merge_instance(ins_data[index]);
+      pv_data.emplace_back(pv_instance);
+    }
   }
 
   input_pv_channel_->Open();
   input_pv_channel_->Write(std::move(pv_data));
   auto in_pv_size = input_pv_channel_->Size();
-  input_pv_channel_->SetBlockSize(in_pv_size / thread_num_ + 1);
+  input_pv_channel_->SetBlockSize(in_pv_size / thread_num_);
 
   ins_data.clear();
   ins_data.shrink_to_fit();

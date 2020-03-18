@@ -944,8 +944,8 @@ def rank_attention(input,
     output = helper.create_variable_for_type_inference(dtype)
     input_help = helper.create_variable_for_type_inference(
         dtype=dtype, stop_gradient=True)
-    param_help = helper.create_variable_for_type_inference(
-        dtype=dtype, stop_gradient=True)
+    #param_help = helper.create_variable_for_type_inference(
+    #    dtype=dtype, stop_gradient=True)
     ins_rank = helper.create_variable_for_type_inference(
         dtype=dtype, stop_gradient=True)
 
@@ -959,7 +959,7 @@ def rank_attention(input,
         outputs={
             "Out": output,
             "InputHelp": input_help,
-            "ParamHelp": param_help,
+            #        "ParamHelp": param_help,
             "InsRank": ins_rank
         },
         attrs={"MaxRank": max_rank})

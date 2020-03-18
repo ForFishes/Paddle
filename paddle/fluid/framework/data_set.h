@@ -66,6 +66,7 @@ class Dataset {
   virtual void SetParseInsId(bool parse_ins_id) = 0;
   virtual void SetParseContent(bool parse_content) = 0;
   virtual void SetParseLogKey(bool parse_logkey) = 0;
+  virtual void SetMergeBySid(bool is_merge) = 0;
   // set merge by ins id
   virtual void SetMergeByInsId(int merge_size) = 0;
   virtual void SetGenerateUniqueFeasign(bool gen_uni_feasigns) = 0;
@@ -169,6 +170,8 @@ class DatasetImpl : public Dataset {
   virtual void SetParseInsId(bool parse_ins_id);
   virtual void SetParseContent(bool parse_content);
   virtual void SetParseLogKey(bool parse_logkey);
+  virtual void SetMergeBySid(bool is_merge);
+
   virtual void SetMergeByInsId(int merge_size);
   virtual void SetGenerateUniqueFeasign(bool gen_uni_feasigns);
   virtual void SetFeaEval(bool fea_eval, int record_candidate_size);
@@ -255,6 +258,7 @@ class DatasetImpl : public Dataset {
   bool parse_ins_id_;
   bool parse_content_;
   bool parse_logkey_;
+  bool merge_by_sid_;
   size_t merge_size_;
   bool slots_shuffle_fea_eval_ = false;
   bool gen_uni_feasigns_ = false;

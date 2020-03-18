@@ -27,6 +27,23 @@ const int CUDA_NUM_THREADS = 1024;
 static inline int GET_BLOCKS(const int N) {
   return (N + CUDA_NUM_THREADS - 1) / CUDA_NUM_THREADS;
 }
+// get ins rank
+template <typename T>
+__global__ void get_ins_rank_kernel(const int* rank_offset, int rank_offset_row,
+                                    int rank_offset_col, T* ins_rank,
+                                    int ins_num) {
+  CUDA_KERNEL_LOOP(idx, ins_num) {
+    ins_rank[idx] = rank_offset[idx * rank_offset_col];
+  }
+}
+
+template <typename T>
+void get_rank_attention_insrank(cudaStream_t stream, const int* rank_offset,
+                                int rank_offset_row, int rank_offset_col,
+                                T* ins_rank, int ins_num) {
+  get_ins_rank_kernel<<<GET_BLOCKS(ins_num), CUDA_NUM_THREADS, 0, stream>>>(
+      rank_offset, rank_offset_row, rank_offset_col, ins_rank, ins_num);
+}
 
 template <typename T>
 __global__ void expand_input_by_rank_kernel(

@@ -253,6 +253,8 @@ void BindDataset(py::module *m) {
       // FIXME for wasq model
       .def("set_parse_logkey", &framework::Dataset::SetParseLogKey,
            py::call_guard<py::gil_scoped_release>())
+      .def("set_merge_by_sid", &framework::Dataset::SetMergeBySid,
+           py::call_guard<py::gil_scoped_release>())
       .def("merge_pv_instance", &framework::Dataset::Merge_Pv_Instance,
            py::call_guard<py::gil_scoped_release>())
       .def("divide_pv_instance", &framework::Dataset::Divide_Pv_Instance,

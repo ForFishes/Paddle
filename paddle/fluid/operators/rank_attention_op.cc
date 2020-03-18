@@ -42,10 +42,10 @@ class RankAttentionOp : public framework::OperatorWithKernel {
         ctx->HasOutput("InputHelp"), true,
         platform::errors::InvalidArgument(
             "Output(InputHelp) of RankAttentionOp should not be null."));
-    PADDLE_ENFORCE_EQ(
-        ctx->HasOutput("ParamHelp"), true,
-        platform::errors::InvalidArgument(
-            "Output(ParamHelp) of RankAttentionOp should not be null."));
+    //   PADDLE_ENFORCE_EQ(
+    //       ctx->HasOutput("ParamHelp"), true,
+    //       platform::errors::InvalidArgument(
+    //           "Output(ParamHelp) of RankAttentionOp should not be null."));
     PADDLE_ENFORCE_EQ(
         ctx->HasOutput("InsRank"), true,
         platform::errors::InvalidArgument(
@@ -66,7 +66,7 @@ class RankAttentionOp : public framework::OperatorWithKernel {
     auto block_matrix_row = max_rank * x_fea_dim;
 
     ctx->SetOutputDim("Out", {ins_num, para_col});
-    ctx->SetOutputDim("ParamHelp", {ins_num * block_matrix_row, para_col});
+    // ctx->SetOutputDim("ParamHelp", {ins_num * block_matrix_row, para_col});
     ctx->SetOutputDim("InputHelp", {ins_num, block_matrix_row});
     ctx->SetOutputDim("InsRank", {ins_num, 1});
     ctx->ShareLoD("X", /*->*/ "Out");
@@ -127,7 +127,7 @@ class RankAttentionOpMaker : public framework::OpProtoAndCheckerMaker {
              "(Tensor) Input tensor of rank_attention_Op operator.");
     AddOutput("Out", "Output tensor of rank_attention_Op operator.");
     AddOutput("InputHelp", "Output tensor of rank_attention_Op operator.");
-    AddOutput("ParamHelp", "Output tensor of rank_attention_Op operator.");
+    // AddOutput("ParamHelp", "Output tensor of rank_attention_Op operator.");
     AddOutput("InsRank", "Output tensor of rank_attention_Op operator.");
     AddAttr<int>("MaxRank", "(int, default 3) max rank of rank_attention_Op")
         .SetDefault(3);
@@ -144,8 +144,7 @@ class RankAttentionGradOpMaker : public framework::SingleGradOpMaker<T> {
   using framework::SingleGradOpMaker<T>::SingleGradOpMaker;
 
  protected:
-  std::unique_ptr<T> Apply() const override {
-    std::unique_ptr<T> op(new T());
+  void Apply(GradOpPtr<T> op) const override {
     op->SetType("rank_attention_grad");
 
     op->SetInput("X", this->Input("X"));
@@ -160,7 +159,6 @@ class RankAttentionGradOpMaker : public framework::SingleGradOpMaker<T> {
     op->SetOutput(framework::GradVarName("RankParam"),
                   this->InputGrad("RankParam"));
     op->SetAttrMap(this->Attrs());
-    return op;
   }
 };
 

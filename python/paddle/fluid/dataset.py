@@ -339,6 +339,7 @@ class InMemoryDataset(DatasetBase):
         self.parse_ins_id = False
         self.parse_content = False
         self.parse_logkey = False
+        self.merge_by_sid = True
         self.merge_by_lineid = False
         self.fleet_send_sleep_seconds = None
 
@@ -362,6 +363,7 @@ class InMemoryDataset(DatasetBase):
         self.dataset.set_parse_ins_id(self.parse_ins_id)
         self.dataset.set_parse_content(self.parse_content)
         self.dataset.set_parse_logkey(self.parse_logkey)
+        self.dataset.set_merge_by_sid(self.merge_by_sid)
         self.dataset.set_data_feed_desc(self.desc())
         self.dataset.create_channel()
         self.dataset.create_readers()
@@ -445,6 +447,23 @@ class InMemoryDataset(DatasetBase):
 
         """
         self.parse_logkey = parse_logkey
+
+    def set_merge_by_sid(self, merge_by_sid):
+        """
+        Set if Dataset need to parse content
+
+        Args:
+            parse_content(bool): if parse content or not
+
+        Examples:
+            .. code-block:: python
+
+              import paddle.fluid as fluid
+              dataset = fluid.DatasetFactory().create_dataset("InMemoryDataset")
+              dataset.set_parse_logkey(True)
+
+        """
+        self.merge_by_sid = merge_by_sid
 
     def merge_pv_instance(self):
         """
