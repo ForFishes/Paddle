@@ -38,14 +38,14 @@ class RankAttentionOp : public framework::OperatorWithKernel {
         ctx->HasOutput("Out"), true,
         platform::errors::InvalidArgument(
             "Output(Out) of RankAttentionOp should not be null."));
-    PADDLE_ENFORCE_EQ(
-        ctx->HasOutput("InputHelp"), true,
-        platform::errors::InvalidArgument(
-            "Output(InputHelp) of RankAttentionOp should not be null."));
-    //   PADDLE_ENFORCE_EQ(
-    //       ctx->HasOutput("ParamHelp"), true,
-    //       platform::errors::InvalidArgument(
-    //           "Output(ParamHelp) of RankAttentionOp should not be null."));
+    //    PADDLE_ENFORCE_EQ(
+    //        ctx->HasOutput("InputHelp"), true,
+    //        platform::errors::InvalidArgument(
+    //            "Output(InputHelp) of RankAttentionOp should not be null."));
+    //  PADDLE_ENFORCE_EQ(
+    //      ctx->HasOutput("ParamHelp"), true,
+    //      platform::errors::InvalidArgument(
+    //          "Output(ParamHelp) of RankAttentionOp should not be null."));
     PADDLE_ENFORCE_EQ(
         ctx->HasOutput("InsRank"), true,
         platform::errors::InvalidArgument(
@@ -54,7 +54,7 @@ class RankAttentionOp : public framework::OperatorWithKernel {
 
     auto x_dims = ctx->GetInputDim("X");
     auto ins_num = x_dims[0];
-    auto x_fea_dim = x_dims[1];
+    // auto x_fea_dim = x_dims[1];
     auto param_dims = ctx->GetInputDim("RankParam");
     auto para_col = param_dims[1];
     auto rank_offset_dims = ctx->GetInputDim("RankOffset");
@@ -63,11 +63,11 @@ class RankAttentionOp : public framework::OperatorWithKernel {
                       platform::errors::InvalidArgument(
                           "Input(RankOffset) has wrong columns."));
 
-    auto block_matrix_row = max_rank * x_fea_dim;
+    // auto block_matrix_row = max_rank * x_fea_dim;
 
     ctx->SetOutputDim("Out", {ins_num, para_col});
     // ctx->SetOutputDim("ParamHelp", {ins_num * block_matrix_row, para_col});
-    ctx->SetOutputDim("InputHelp", {ins_num, block_matrix_row});
+    // ctx->SetOutputDim("InputHelp", {ins_num, block_matrix_row});
     ctx->SetOutputDim("InsRank", {ins_num, 1});
     ctx->ShareLoD("X", /*->*/ "Out");
   }
@@ -81,41 +81,42 @@ class RankAttentionOp : public framework::OperatorWithKernel {
   }
 };
 
-class RankAttentionGradOp : public framework::OperatorWithKernel {
- public:
-  using framework::OperatorWithKernel::OperatorWithKernel;
-
-  void InferShape(framework::InferShapeContext* ctx) const override {
-    PADDLE_ENFORCE_EQ(
-        ctx->HasInput("X"), true,
-        platform::errors::InvalidArgument("Input(X) should not be null"));
-    PADDLE_ENFORCE_EQ(ctx->HasInput("RankParam"), true,
-                      platform::errors::InvalidArgument(
-                          "Input(RankParam) should not be null"));
-    PADDLE_ENFORCE_EQ(ctx->HasInput("InputHelp"), true,
-                      platform::errors::InvalidArgument(
-                          "Input(InputHelp) should not be null"));
-    // PADDLE_ENFORCE_EQ(ctx->HasInput("ParamHelp"), true,
-    //                  platform::errors::InvalidArgument(
-    //                      "Input(ParamHelp) should not be null"));
-    PADDLE_ENFORCE_EQ(
-        ctx->HasInput("InsRank"), true,
-        platform::errors::InvalidArgument("Input(InsRank) should not be null"));
-
-    // ctx->SetOutputDim(framework::GradVarName("X"), ctx->GetInputDim("X"));
-    ctx->SetOutputDim(framework::GradVarName("RankParam"),
-                      ctx->GetInputDim("RankParam"));
-    // ctx->ShareLoD("X", /*-->*/ framework::GradVarName("X"));
-  }
-
- protected:
-  framework::OpKernelType GetExpectedKernelType(
-      const framework::ExecutionContext& ctx) const override {
-    return framework::OpKernelType(OperatorWithKernel::IndicateVarDataType(
-                                       ctx, framework::GradVarName("Out")),
-                                   ctx.device_context());
-  }
-};
+// class RankAttentionGradOp : public framework::OperatorWithKernel {
+// public:
+//  using framework::OperatorWithKernel::OperatorWithKernel;
+//
+//  void InferShape(framework::InferShapeContext* ctx) const override {
+//    PADDLE_ENFORCE_EQ(
+//        ctx->HasInput("X"), true,
+//        platform::errors::InvalidArgument("Input(X) should not be null"));
+//    PADDLE_ENFORCE_EQ(ctx->HasInput("RankParam"), true,
+//                      platform::errors::InvalidArgument(
+//                          "Input(RankParam) should not be null"));
+//    PADDLE_ENFORCE_EQ(ctx->HasInput("InputHelp"), true,
+//                      platform::errors::InvalidArgument(
+//                          "Input(InputHelp) should not be null"));
+//    // PADDLE_ENFORCE_EQ(ctx->HasInput("ParamHelp"), true,
+//    //                  platform::errors::InvalidArgument(
+//    //                      "Input(ParamHelp) should not be null"));
+//    PADDLE_ENFORCE_EQ(
+//        ctx->HasInput("InsRank"), true,
+//        platform::errors::InvalidArgument("Input(InsRank) should not be
+//        null"));
+//
+//    // ctx->SetOutputDim(framework::GradVarName("X"), ctx->GetInputDim("X"));
+//    ctx->SetOutputDim(framework::GradVarName("RankParam"),
+//                      ctx->GetInputDim("RankParam"));
+//    // ctx->ShareLoD("X", /*-->*/ framework::GradVarName("X"));
+//  }
+//
+// protected:
+//  framework::OpKernelType GetExpectedKernelType(
+//      const framework::ExecutionContext& ctx) const override {
+//    return framework::OpKernelType(OperatorWithKernel::IndicateVarDataType(
+//                                       ctx, framework::GradVarName("Out")),
+//                                   ctx.device_context());
+//  }
+//};
 
 class RankAttentionOpMaker : public framework::OpProtoAndCheckerMaker {
  public:
@@ -126,7 +127,7 @@ class RankAttentionOpMaker : public framework::OpProtoAndCheckerMaker {
     AddInput("RankParam",
              "(Tensor) Input tensor of rank_attention_Op operator.");
     AddOutput("Out", "Output tensor of rank_attention_Op operator.");
-    AddOutput("InputHelp", "Output tensor of rank_attention_Op operator.");
+    // AddOutput("InputHelp", "Output tensor of rank_attention_Op operator.");
     // AddOutput("ParamHelp", "Output tensor of rank_attention_Op operator.");
     AddOutput("InsRank", "Output tensor of rank_attention_Op operator.");
     AddAttr<int>("MaxRank", "(int, default 3) max rank of rank_attention_Op")
@@ -138,44 +139,44 @@ RankAttention  the input tensors along dimension axis.
   }
 };
 
-template <typename T>
-class RankAttentionGradOpMaker : public framework::SingleGradOpMaker<T> {
- public:
-  using framework::SingleGradOpMaker<T>::SingleGradOpMaker;
+// template <typename T>
+// class RankAttentionGradOpMaker : public framework::SingleGradOpMaker<T> {
+// public:
+//  using framework::SingleGradOpMaker<T>::SingleGradOpMaker;
+//
+// protected:
+//  void Apply(GradOpPtr<T> op) const override {
+//    op->SetType("rank_attention_grad");
+//
+//    op->SetInput("X", this->Input("X"));
+//    op->SetInput("RankOffset", this->Input("RankOffset"));
+//    op->SetInput("RankParam", this->Input("RankParam"));
+//    op->SetInput("InputHelp", this->Output("InputHelp"));
+//    // op->SetInput("ParamHelp", this->Output("ParamHelp"));
+//    op->SetInput("InsRank", this->Output("InsRank"));
+//    op->SetInput(framework::GradVarName("Out"), this->OutputGrad("Out"));
+//
+//    // op->SetOutput(framework::GradVarName("X"), this->InputGrad("X"));
+//    op->SetOutput(framework::GradVarName("RankParam"),
+//                  this->InputGrad("RankParam"));
+//    op->SetAttrMap(this->Attrs());
+//  }
+//};
 
- protected:
-  void Apply(GradOpPtr<T> op) const override {
-    op->SetType("rank_attention_grad");
-
-    op->SetInput("X", this->Input("X"));
-    op->SetInput("RankOffset", this->Input("RankOffset"));
-    op->SetInput("RankParam", this->Input("RankParam"));
-    op->SetInput("InputHelp", this->Output("InputHelp"));
-    // op->SetInput("ParamHelp", this->Output("ParamHelp"));
-    op->SetInput("InsRank", this->Output("InsRank"));
-    op->SetInput(framework::GradVarName("Out"), this->OutputGrad("Out"));
-
-    // op->SetOutput(framework::GradVarName("X"), this->InputGrad("X"));
-    op->SetOutput(framework::GradVarName("RankParam"),
-                  this->InputGrad("RankParam"));
-    op->SetAttrMap(this->Attrs());
-  }
-};
-
-DECLARE_NO_NEED_BUFFER_VARS_INFERENCE(
-    RankAttentionGradOpNoNeedBufferVarsInference, "X", "RankOffset",
-    "RankParam");
+// DECLARE_NO_NEED_BUFFER_VARS_INFERENCE(
+//    RankAttentionGradOpNoNeedBufferVarsInference, "X", "RankOffset",
+//    "RankParam");
 
 }  // namespace operators
 }  // namespace paddle
 
 namespace ops = paddle::operators;
 REGISTER_OPERATOR(rank_attention, ops::RankAttentionOp,
-                  ops::RankAttentionOpMaker,
-                  ops::RankAttentionGradOpMaker<paddle::framework::OpDesc>,
-                  ops::RankAttentionGradOpMaker<paddle::imperative::OpBase>);
-REGISTER_OPERATOR(rank_attention_grad, ops::RankAttentionGradOp,
-                  ops::RankAttentionGradOpNoNeedBufferVarsInference);
+                  ops::RankAttentionOpMaker);
+//                  ops::RankAttentionGradOpMaker<paddle::framework::OpDesc>,
+//                  ops::RankAttentionGradOpMaker<paddle::imperative::OpBase>);
+// REGISTER_OPERATOR(rank_attention_grad, ops::RankAttentionGradOp,
+//                  ops::RankAttentionGradOpNoNeedBufferVarsInference);
 
 REGISTER_OP_CPU_KERNEL(
     rank_attention,
