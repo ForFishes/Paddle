@@ -151,11 +151,11 @@ class RankAttentionCUDAKernel : public framework::OpKernel<T> {
       }
     }
 
-    std::cerr << "input_pos" << std::endl;
-    for (auto ele : input_pos) {
-      std::cerr << ele << " ";
-    }
-    std::cerr << std::endl;
+    // std::cerr << "input_pos" << std::endl;
+    // for (auto ele : input_pos) {
+    //  std::cerr << ele << " ";
+    //}
+    // std::cerr << std::endl;
 
     input_pos.push_back(-999);  // the end condition
     int low = 0;
@@ -170,23 +170,23 @@ class RankAttentionCUDAKernel : public framework::OpKernel<T> {
       if (fast == ins_num) break;
     }
 
-    auto param_data = param->data<T>();
-    auto input_data = X->data<T>();
-    auto M = 1;
-    auto N = para_col;
-    auto K = block_matrix_row;
-
-    for (int k = 0; k < ins_num; ++k) {
-      int rank = static_cast<int>(v_ins_rank[k]);
-      if (rank < 0) continue;
-      int start = input_pos[k];
-      int offset = input_offset[k];
-      K = offset * x_fea_dim;
-      auto *Ak = &input_data[start * x_fea_dim];
-      auto *Bk = &param_data[(rank - 1) * strideB];
-      auto *Ck = &out_data[k * M * N];
-      blas.GEMM(transA, transB, M, N, K, alpha, Ak, Bk, beta, Ck);
-    }
+    //    auto param_data = param->data<T>();
+    //    auto input_data = X->data<T>();
+    //    auto M = 1;
+    //    auto N = para_col;
+    //    auto K = block_matrix_row;
+    //
+    //    for (int k = 0; k < ins_num; ++k) {
+    //      int rank = static_cast<int>(v_ins_rank[k]);
+    //      if (rank < 0) continue;
+    //      int start = input_pos[k];
+    //      int offset = input_offset[k];
+    //      K = offset * x_fea_dim;
+    //      auto *Ak = &input_data[start * x_fea_dim];
+    //      auto *Bk = &param_data[(rank - 1) * strideB];
+    //      auto *Ck = &out_data[k * M * N];
+    //      blas.GEMM(transA, transB, M, N, K, alpha, Ak, Bk, beta, Ck);
+    //    }
   }
 };
 

@@ -816,22 +816,22 @@ void MultiSlotDataset::Merge_Pv_Instance() {
   input_channel_->ReadAll(ins_data);
 
   // construct map <search_id, index>
-  std::unordered_map<uint64_t, std::vector<size_t>> sid_index;
+  std::unordered_map<uint64_t, std::vector<int>> sid_index;
   std::vector<uint64_t> all_search_id;
   std::vector<size_t> all_index;
 
   if (merge_by_sid_) {
     for (size_t index = 0; index < ins_data.size(); ++index) {
       uint64_t sid = ins_data[index].search_id;
-      // int rank = ins_data[index].rank;  // 1~4
-      // assert(rank <= 5);
+      int rank = ins_data[index].rank;  // 1~4
+      assert(rank <= 5);
       if (sid_index.find(sid) != sid_index.end()) {
-        sid_index[sid].emplace_back(index);
-        // sid_index[sid][rank - 1] = index;
+        // sid_index[sid].emplace_back(index);
+        sid_index[sid][rank - 1] = index;
       } else {
-        sid_index.emplace(sid, std::vector<size_t>(1, index));
-        // sid_index.emplace(sid, std::vector<int>(5, -1));
-        // sid_index[sid][rank - 1] = index;
+        // sid_index.emplace(sid, std::vector<size_t>(1, index));
+        sid_index.emplace(sid, std::vector<int>(5, -1));
+        sid_index[sid][rank - 1] = index;
         all_search_id.emplace_back(sid);
       }
     }
@@ -853,9 +853,13 @@ void MultiSlotDataset::Merge_Pv_Instance() {
                  fleet_ptr->LocalRandomEngine());
     for (auto& sid : all_search_id) {
       PvInstance pv_instance;
-      for (auto& index : sid_index[sid]) {
-        // if(index < 0)
-        //  continue;
+      auto& index_msg = sid_index[sid];
+      for (size_t i = 0; i < index_msg.size(); ++i) {
+        int index = index_msg[i];
+        if (index < 0) {
+          assert(i > 0);
+          break;
+        }
         pv_instance.merge_instance(ins_data[index]);
       }
       pv_data.emplace_back(pv_instance);
