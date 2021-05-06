@@ -136,6 +136,9 @@ class HybridCommunicateGroup(object):
         # create comm group for pipe parallel
         self._pp_group, self._pp_comm_group = self._set_comm_group("pipe")
 
+        # create p2p_groups and no new group
+        self._p2p_groups = self._build_p2p_groups()
+
         # create global group for check inf_nan / clip global norm
         self._check_group, self._check_comm_group = self._set_check_group(
             "data")
@@ -153,6 +156,20 @@ class HybridCommunicateGroup(object):
 
         global _HYBRID_PARALLEL_GROUP
         _HYBRID_PARALLEL_GROUP = self
+
+    def _build_p2p_groups(self):
+        comm_lists = self._topo.get_comm_list('pipe')
+        p2p_lists = []
+        for rank in range(self.nranks):
+            for l in comm_lists:
+                assert len(l) == self._pp_degree
+                if rank in l:
+                    idx = l.index(rank)
+                    buddy_rank = l[(idx + 1) % self._pp_degree]
+                    p2p_lists.append([rank, buddy_rank])
+                    break  # next global rank
+        assert len(p2p_lists) == self.nranks
+        return p2p_lists
 
     def get_parallel_mode(self):
         # there are three modes : DataParallel / ModelParallel / PipelineParallel
@@ -249,6 +266,16 @@ class HybridCommunicateGroup(object):
 
     def get_pipe_parallel_group(self):
         return self._pp_comm_group
+
+    def get_p2p_groups(self):
+        return self._p2p_groups
+
+    #returns the global rank of the process with the provided stage id
+    #which has the same data_parallel_id as caller process
+    def stage_to_global(self, stage_id, **kwargs):
+        me = self._topo.get_coord(self.global_rank)
+        transform = me._replace(pipe=stage_id, **kwargs)._asdict()
+        return self._topo.get_rank(**transform)
 
     # check parallel group
     def get_check_parallel_group(self):
