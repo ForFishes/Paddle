@@ -23,6 +23,9 @@ import paddle.fluid as fluid
 import paddle.distributed.fleet as fleet
 from paddle.io import DataLoader, Dataset
 import unittest
+from hybrid_parallel_pp_layer import AlexNetPipeDesc, AlexNet, AlexNetPipe
+from paddle.distributed.fleet.meta_parallel import LayerDesc, PipelineLayer
+import paddle.nn as nn
 
 
 def set_random_seed(seed, dp_id, rank_id):
@@ -35,19 +38,18 @@ def set_random_seed(seed, dp_id, rank_id):
 HIDDEN_DIM = 32
 LAYERS = 8
 
-
-def sequential_model():
-    model = paddle.nn.Sequential(
-        paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
-        paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
-        paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
-        paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
-        paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
-        paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
-        paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
-        paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
-        paddle.nn.Linear(HIDDEN_DIM, 1), )
-    return model
+# def sequential_model():
+#     model = paddle.nn.Sequential(
+#         paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
+#         paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
+#         paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
+#         paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
+#         paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
+#         paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
+#         paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
+#         paddle.nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
+#         paddle.nn.Linear(HIDDEN_DIM, 1), )
+#     return model
 
 
 class TestDistPPTraning(unittest.TestCase):
@@ -65,27 +67,65 @@ class TestDistPPTraning(unittest.TestCase):
         paddle.distributed.init_parallel_env()
         fleet.init(is_collective=True, strategy=strategy)
 
-    def test_mp_model(self):
-        batch_input = paddle.randn(shape=(1, HIDDEN_DIM), dtype="float32")
-        pipe_model = sequential_model()
-        sgd = paddle.optimizer.SGD(learning_rate=0.0003, parameters=[])
-        pipe_model = paddle.distributed.fleet.distributed_model(pipe_model)
+    def test_pp_model(self):
+        hcg = fleet.get_hybrid_communicate_group()
+        base_model = AlexNet(10)
 
-        if pipe_model.stage_id == 0 or pipe_model.stage_id == 1:
-            pipe_input = batch_input.clone().detach()
-            pipe_input = paddle.cast(pipe_input, 'float32')
+        init_net = AlexNetPipe()
+        pipe_model = PipelineLayer(
+            layers=init_net.to_layers(),
+            num_stages=self.model_parallel_size,
+            loss_fn=nn.CrossEntropyLoss())
 
-            def data_gen():
-                gen = True
-                while gen:
-                    yield [pipe_input, 0]
-                    gen = False
+        optimizer = paddle.optimizer.SGD(learning_rate=0.001,
+                                         parameters=pipe_model.parameters())
 
-            loader = paddle.io.DataLoader.from_generator(capacity=5)
-            loader.set_batch_generator(data_gen)
-            data_iter = iter(loader)
-        else:
-            data_iter = None
+        pipe_model = fleet.distributed_model(pipe_model)
+        optimizer = fleet.distributed_optimizer(optimizer)
+
+        train_reader = paddle.batch(
+            paddle.dataset.mnist.train(), batch_size=5, drop_last=True)
+
+        for step_id, data in enumerate(train_reader()):
+            batch_size = len(data)
+            x_data = np.array([x[0] for x in data]).astype('float32').reshape(
+                batch_size, 1, 28, 28)
+            y_data = np.array(
+                [x[1] for x in data]).astype('int64').reshape(batch_size, 1)
+            img = paddle.to_tensor(x_data)
+            label = paddle.to_tensor(y_data)
+            label.stop_gradient = True
+
+            if step_id > 5:
+                return
+
+            if hcg.get_stage_id() == 0:
+                loss = pipe_model.train_batch(img, optimizer=optimizer)
+            elif hcg.get_stage_id() == hcg.get_pipe_parallel_world_size() - 1:
+                loss = pipe_model.train_batch(label, optimizer=optimizer)
+            else:
+                loss = pipe_model.train_batch(None, optimizer=optimizer)
+
+            # loss = pipe_model(img, label)
+            print(loss)
+            # pipe_input = batch_input.clone().detach()
+            # pipe_input = paddle.cast(pipe_input, 'float32')            
+
+        # if pipe_model.stage_id == 0 or pipe_model.stage_id == 1:
+        #     pipe_input = batch_input.clone().detach()
+        #     pipe_input = paddle.cast(pipe_input, 'float32')
+
+        #     def data_gen():
+        #         gen = True
+        #         while gen:
+        #             yield [pipe_input, 0]
+        #             gen = False
+
+        #     loader = paddle.io.DataLoader.from_generator(capacity=5)
+        #     loader.set_batch_generator(data_gen)
+        #     data_iter = iter(loader)
+        # else:
+        #     data_iter = None
         return True
 
 
