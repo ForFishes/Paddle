@@ -71,6 +71,8 @@ __forceinline__ __device__ U BlockReduceSum(U val) {
 
   val = WarpReduceSum(val);  // Each warp performs partial reduction
 
+  __syncthreads();
+
   if (lane == 0) shared[wid] = val;  // Write reduced value to shared memory
 
   __syncthreads();  // Wait for all partial reductions

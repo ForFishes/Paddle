@@ -487,3 +487,77 @@ class PipelineParallel(MetaParallelBase):
 
     def forward(self, *inputs, **kwargs):
         raise RuntimeError("Call train_batch for pipeline instead of forward.")
+
+    def _recv_forward(self, cache_id):
+        if self.is_first_stage:
+            self._load_micro_batch(cache_id)
+        else:
+            if self.stage_id != 0:
+                self._recv_activations(cache_id)
+
+    def _forward_step(self, cache_id):
+        if isinstance(self.caches['inputs'][cache_id], tuple):
+            inputs = tuple(t for t in self.caches['inputs'][cache_id])
+        else:
+            inputs = self.caches['inputs'][cache_id]
+
+        outputs = self._layers.forward(inputs)
+        self._clear_grads(inputs)
+
+        self.caches['outputs'][cache_id] = outputs
+
+        return outputs
+
+    def _send_forward(self, cache_id):
+        if not self.is_last_stage:
+            self._send_activations(cache_id)
+
+    def _send_forward_recv_backward(self, cache_id):
+        if self.is_last_stage:
+            output_tensor_grad = None
+        else:
+            pass
+
+    def train_batch_v2(self, data, optimizer, lr_scheduler=None):
+        assert isinstance(optimizer, HybridParallelOptimizer), (
+            'optimizer should be HybridParallelOptimizer subclass.')
+        self.optimizer = optimizer
+        self.lr_scheduler = lr_scheduler
+        assert fluid.framework._dygraph_tracer()._has_grad, (
+            'Please enable the generation of gradients.')
+
+        if self.is_first_stage or self.is_last_stage:
+            assert data is not None, (
+                "For the first and the last stage, the data_iter must be set.")
+        else:
+            data = None
+
+        self.data = data
+        self._layers.train()
+
+        # store total loss of entire batch
+        self.total_loss = None
+        self._init_caches(self.accumulate_steps)
+
+        num_warmup_microbatches = self.num_stages - self.stage_id - 1
+        num_warmup_microbatches = min(num_warmup_microbatches, self.num_stages)
+        num_microbatches_remaining = self.num_stages - num_warmup_microbatches
+
+        input_tensors = []
+        output_tensors = []
+        # run warmup forward pass
+        for i in range(startup_steps):
+            input_tensor = self._recv_forward(cache_id=i)
+            output_tensor = self._forward_step(cache_id=i)
+            self._send_forward(cache_id=i)
+
+            input_tensors.append(input_tensor)
+            output_tensors.append(output_tensor)
+
+        #if num_microbatches_remaining > 0:
+        #    input_tensor = self._recv_forward(cache_id=??)
+
+        ## 1F1B
+        #for i in range(num_microbatches_remaining):
+        #    output_tensor = self._forward_step(cache_id=??)
+        #    output_tensor_grad = 
