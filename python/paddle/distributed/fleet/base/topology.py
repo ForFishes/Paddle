@@ -172,7 +172,7 @@ class HybridCommunicateGroup(object):
                     idx = l.index(rank)
                     buddy_rank = l[(idx + 1) % self._pp_degree]
                     p2p_lists.append([rank, buddy_rank])
-                    break  # next global rank
+                    break
         assert len(p2p_lists) == self.nranks
         return p2p_lists
 
