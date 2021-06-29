@@ -39,20 +39,13 @@ def split_tensor_into_1d_equal_chunks(tensor, hcg):
 
 
 def gather_split_1d_tensor(tensor, hcg):
-    #print("gather_split_1d_tensor tensor", tensor)
     world_size = hcg.get_model_parallel_world_size()
     numel = paddle.numel(tensor)
     numel_gathered = world_size * numel
-    #gathered = paddle.empty([numel_gathered], dtype=tensor.dtype)
-
-    #chunks = [gathered[i * numel:(i + 1) * numel] for i in range(world_size)]
-    #paddle.distributed.all_gather(
-    #    chunks, tensor, group=hcg.get_model_parallel_group())
     tensor_list = []
     paddle.distributed.all_gather(
         tensor_list, tensor, group=hcg.get_model_parallel_group())
     gathered = paddle.concat(x=tensor_list, axis=-1)
-    #print("gather_split_1d_tensor gathered", gathered)
     return gathered
 
 
@@ -422,7 +415,11 @@ class PipelineParallel(MetaParallelBase):
                 if not is_float_tensor(d):
                     assert d.grad is None
                     continue
-                p2p.send(d.grad, self.prev_stage_id)
+
+                if self.is_pipe_partitioned:
+                    grad = split_tensor_into_1d_equal_chunks(d.grad, self._hcg)
+
+                p2p.send(grad, self.prev_stage_id)
 
         self.caches['inputs'][cache_id] = None
 
@@ -483,8 +480,13 @@ class PipelineParallel(MetaParallelBase):
         else:
             assert isinstance(outputs, tuple)
             for d in self.grad_tensors:
-                #print("d gradient: ", d)
-                p2p.recv(d, self.next_stage_id)
+                partition_size = paddle.numel(
+                    d) // self._hcg.get_model_parallel_world_size()
+                assert isinstance(d, paddle.Tensor)
+                tmp = paddle.zeros([partition_size], d.dtype)
+                p2p.recv(tmp, self.next_stage_id)
+                # if self.is_pipe_partitioned:
+                d = gather_split_1d_tensor(tmp.clone().detach(), self._hcg)
 
     def _step(self):
         self.optimizer.step()
