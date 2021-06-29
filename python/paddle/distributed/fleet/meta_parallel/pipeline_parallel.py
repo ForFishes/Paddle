@@ -29,8 +29,7 @@ from .pp_utils import p2p_communication as p2p
 __all__ = []
 
 
-def split_tensor_into_1d_equal_chunks(tensor, hcg):
-    #data = paddle.flatten_(tensor)
+def split_tensor_for_tensor_parallel(tensor, hcg):
     data = tensor.flatten()
     partition_size = paddle.numel(data) // hcg.get_model_parallel_world_size()
     start_index = partition_size * hcg.get_model_parallel_rank()
@@ -38,7 +37,7 @@ def split_tensor_into_1d_equal_chunks(tensor, hcg):
     return data[start_index:end_index]
 
 
-def gather_split_1d_tensor(tensor, hcg):
+def gather_split_for_tensor_parallel(tensor, hcg):
     world_size = hcg.get_model_parallel_world_size()
     numel = paddle.numel(tensor)
     numel_gathered = world_size * numel
@@ -394,14 +393,13 @@ class PipelineParallel(MetaParallelBase):
 
         if isinstance(outputs, paddle.Tensor):
             if self.is_pipe_partitioned and not self.is_last_stage:
-                outputs = split_tensor_into_1d_equal_chunks(outputs, self._hcg)
+                outputs = split_tensor_for_tensor_parallel(outputs, self._hcg)
             p2p.send(outputs, self.next_stage_id)
 
         elif isinstance(outputs, tuple):
             for output in outputs:
                 if self.is_pipe_partitioned and not self.is_last_stage:
-                    output = split_tensor_into_1d_equal_chunks(output,
-                                                               self._hcg)
+                    output = split_tensor_for_tensor_parallel(output, self._hcg)
                 p2p.send(output.detach(), self.next_stage_id)
 
     def _send_gradients(self, cache_id):
@@ -417,7 +415,7 @@ class PipelineParallel(MetaParallelBase):
                     continue
 
                 if self.is_pipe_partitioned:
-                    grad = split_tensor_into_1d_equal_chunks(d.grad, self._hcg)
+                    grad = split_tensor_for_tensor_parallel(d.grad, self._hcg)
 
                 p2p.send(grad, self.prev_stage_id)
 
@@ -432,7 +430,7 @@ class PipelineParallel(MetaParallelBase):
             p2p.recv(self.recv_cache, self.prev_stage_id)
             inputs = self.recv_cache.clone().detach()
             if self.is_pipe_partitioned and not self.is_first_stage:
-                inputs = gather_split_1d_tensor(inputs, self._hcg)
+                inputs = gather_split_for_tensor_parallel(inputs, self._hcg)
             inputs.stop_gradient = not is_float_tensor(inputs)
 
         else:
@@ -445,8 +443,8 @@ class PipelineParallel(MetaParallelBase):
                 tmp = paddle.zeros([partition_size], d.dtype)
                 p2p.recv(tmp, self.prev_stage_id)
                 if self.is_pipe_partitioned and not self.is_first_stage:
-                    inputs[idx] = gather_split_1d_tensor(tmp.clone().detach(),
-                                                         self._hcg)
+                    inputs[idx] = gather_split_for_tensor_parallel(
+                        tmp.clone().detach(), self._hcg)
                 else:
                     inputs[idx] = tmp.clone().detach()
                 inputs[idx].reshape_(d.shape)
@@ -485,8 +483,8 @@ class PipelineParallel(MetaParallelBase):
                 assert isinstance(d, paddle.Tensor)
                 tmp = paddle.zeros([partition_size], d.dtype)
                 p2p.recv(tmp, self.next_stage_id)
-                # if self.is_pipe_partitioned:
-                d = gather_split_1d_tensor(tmp.clone().detach(), self._hcg)
+                d = gather_split_for_tensor_parallel(tmp.clone().detach(),
+                                                     self._hcg)
 
     def _step(self):
         self.optimizer.step()
@@ -535,77 +533,3 @@ class PipelineParallel(MetaParallelBase):
 
     def forward(self, *inputs, **kwargs):
         raise RuntimeError("Call train_batch for pipeline instead of forward.")
-
-    def _recv_forward(self, cache_id):
-        if self.is_first_stage:
-            self._load_micro_batch(cache_id)
-        else:
-            if self.stage_id != 0:
-                self._recv_activations(cache_id)
-
-    def _forward_step(self, cache_id):
-        if isinstance(self.caches['inputs'][cache_id], tuple):
-            inputs = tuple(t for t in self.caches['inputs'][cache_id])
-        else:
-            inputs = self.caches['inputs'][cache_id]
-
-        outputs = self._layers.forward(inputs)
-        self._clear_grads(inputs)
-
-        self.caches['outputs'][cache_id] = outputs
-
-        return outputs
-
-    def _send_forward(self, cache_id):
-        if not self.is_last_stage:
-            self._send_activations(cache_id)
-
-    def _send_forward_recv_backward(self, cache_id):
-        if self.is_last_stage:
-            output_tensor_grad = None
-        else:
-            pass
-
-    def train_batch_v2(self, data, optimizer, lr_scheduler=None):
-        assert isinstance(optimizer, HybridParallelOptimizer), (
-            'optimizer should be HybridParallelOptimizer subclass.')
-        self.optimizer = optimizer
-        self.lr_scheduler = lr_scheduler
-        assert fluid.framework._dygraph_tracer()._has_grad, (
-            'Please enable the generation of gradients.')
-
-        if self.is_first_stage or self.is_last_stage:
-            assert data is not None, (
-                "For the first and the last stage, the data_iter must be set.")
-        else:
-            data = None
-
-        self.data = data
-        self._layers.train()
-
-        # store total loss of entire batch
-        self.total_loss = None
-        self._init_caches(self.accumulate_steps)
-
-        num_warmup_microbatches = self.num_stages - self.stage_id - 1
-        num_warmup_microbatches = min(num_warmup_microbatches, self.num_stages)
-        num_microbatches_remaining = self.num_stages - num_warmup_microbatches
-
-        input_tensors = []
-        output_tensors = []
-        # run warmup forward pass
-        for i in range(startup_steps):
-            input_tensor = self._recv_forward(cache_id=i)
-            output_tensor = self._forward_step(cache_id=i)
-            self._send_forward(cache_id=i)
-
-            input_tensors.append(input_tensor)
-            output_tensors.append(output_tensor)
-
-        #if num_microbatches_remaining > 0:
-        #    input_tensor = self._recv_forward(cache_id=??)
-
-        ## 1F1B
-        #for i in range(num_microbatches_remaining):
-        #    output_tensor = self._forward_step(cache_id=??)
-        #    output_tensor_grad = 
