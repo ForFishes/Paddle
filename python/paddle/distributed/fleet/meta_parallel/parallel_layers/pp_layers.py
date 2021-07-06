@@ -258,3 +258,21 @@ class PipelineLayer(Layer):
         for layer in self.run_function:
             input = layer(input)
         return input
+
+    def save_state_dict(self, path):
+        # only dp_rank=0 to save model
+        if self._topo.get_coord(self.global_rank).data != 0:
+            return
+
+        def _offset_dirname(ckpt_dir, local_layer_idx):
+            idx = local_layer_idx + self._start_pos
+            layer_ckpt_path = os.path.join(ckpt_dir, 'layer_{idx:02d}')
+            layer_ckpt_path += '-model_states.pdparams'
+            return layer_ckpt_path
+
+        os.makedirs(path, exist_ok=True)
+        for idx, layer in enumerate(self.run_function):
+            model_ckpt_path = _offset_dirname(dirname, idx)
+            if not hasattr(layer, 'state_dict'):
+                continue
+            paddle.save(layer.state_dict(), model_ckpt_path)

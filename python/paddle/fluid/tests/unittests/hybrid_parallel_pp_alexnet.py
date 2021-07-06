@@ -17,9 +17,9 @@ from __future__ import print_function
 
 import unittest
 import paddle
+import shutil
 import numpy as np
 import random
-import paddle
 import paddle.distributed as dist
 import paddle.distributed.fleet as fleet
 from hybrid_parallel_pp_layer import AlexNetPipeDesc, AlexNet
@@ -101,6 +101,8 @@ class TestDistPPTraning(unittest.TestCase):
             label.stop_gradient = True
 
             if step_id >= 5:
+                path = "./hybrid/"
+                model_b.save_state_dict("./hybrid/")
                 return True
 
             loss_a = model_a(img, label)
