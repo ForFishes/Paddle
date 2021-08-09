@@ -150,6 +150,13 @@ def _is_valid_send_recv_partial(tensor, mp_degree):
     return mp_degree > 1 and tensor_numel % mp_degree == 0
 
 
+def _wait_compute(tensor, group=None):
+    if group is not None and not group.is_member():
+        return
+    ring_id = 0 if group is None else group.id
+    return _C_ops.c_wait_compute(tensor, 'ring_id', ring_id)
+
+
 def send_partial(tensor,
                  dst=0,
                  nranks=1,
@@ -159,6 +166,9 @@ def send_partial(tensor,
     if group is not None and not group.is_member():
         return
     ring_id = 0 if group is None else group.id
+
+    if not use_calc_stream:
+        _wait_compute(tensor, group)
 
     if _is_valid_send_recv_partial(tensor, nranks):
         return _C_ops.partial_send(tensor.detach(), 'use_calc_stream',

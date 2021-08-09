@@ -33,12 +33,13 @@ class CSyncCommStreamOp : public framework::OperatorWithKernel {
 
   void InferShape(framework::InferShapeContext* ctx) const override {}
 
- protected:
-  framework::OpKernelType GetExpectedKernelType(
-      const framework::ExecutionContext& ctx) const override {
-    return framework::OpKernelType(framework::proto::VarType::FP32,
-                                   ctx.GetPlace());
-  }
+  //  protected:
+  //   framework::OpKernelType GetExpectedKernelType(
+  //       const framework::ExecutionContext& ctx) const override {
+  //     return framework::OpKernelType(
+  //         OperatorWithKernel::IndicateVarDataType(ctx, "X"),
+  //         ctx.device_context());
+  //   }
 };
 
 class CSyncCommStreamOpMaker : public framework::OpProtoAndCheckerMaker {
@@ -97,6 +98,9 @@ namespace ops = paddle::operators;
 REGISTER_OP_WITHOUT_GRADIENT(c_sync_comm_stream, ops::CSyncCommStreamOp,
                              ops::CSyncCommStreamOpMaker);
 
-REGISTER_OP_CUDA_KERNEL(c_sync_comm_stream, ops::CSyncCommStreamKernel<float>);
+REGISTER_OP_CUDA_KERNEL(c_sync_comm_stream, ops::CSyncCommStreamKernel<int>,
+                        ops::CSyncCommStreamKernel<float>,
+                        ops::CSyncCommStreamKernel<double>,
+                        ops::CSyncCommStreamKernel<paddle::platform::float16>);
 
 REGISTER_OP_NPU_KERNEL(c_sync_comm_stream, ops::CSyncCommStreamKernel<float>);

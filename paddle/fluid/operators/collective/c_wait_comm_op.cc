@@ -14,11 +14,6 @@ limitations under the License. */
 #include <string>
 
 #include "paddle/fluid/framework/op_registry.h"
-namespace paddle {
-namespace framework {
-class Scope;
-}  // namespace framework
-}  // namespace paddle
 #if defined(PADDLE_WITH_NCCL) || defined(PADDLE_WITH_RCCL)
 #include "paddle/fluid/platform/collective_helper.h"
 #endif
@@ -26,21 +21,46 @@ class Scope;
 namespace paddle {
 namespace operators {
 
-class CWaitCommOp : public framework::OperatorBase {
+class CWaitCommOp : public framework::OperatorWithKernel {
  public:
-  CWaitCommOp(const std::string& type, const framework::VariableNameMap& inputs,
-              const framework::VariableNameMap& outputs,
-              const framework::AttributeMap& attrs)
-      : OperatorBase(type, inputs, outputs, attrs) {}
+  using framework::OperatorWithKernel::OperatorWithKernel;
 
-  void RunImpl(const framework::Scope& scope,
-               const platform::Place& place) const override {
+  void InferShape(framework::InferShapeContext* ctx) const override {}
+};
+
+class CWaitCommOpMaker : public framework::OpProtoAndCheckerMaker {
+ public:
+  void Make() {
+    AddInput("X", "(Tensor) Dependency of the variable need to sync")
+        .AsDuplicable()
+        .AsDispensable();
+    AddOutput("Out", "(Tensor) Dependency of the variable need to sync")
+        .AsDuplicable();
+    AddAttr<int>("ring_id", "(int default 0) ring id.").SetDefault(0);
+    AddComment(R"DOC(
+CWaitComm Operator
+
+Compute stream wait Comm Stream with async event.
+)DOC");
+  }
+};
+
+template <typename T>
+class CWaitCommCudaKernel : public framework::OpKernel<T> {
+ public:
+  void Compute(const framework::ExecutionContext& ctx) const override {
+    auto place = ctx.GetPlace();
+    PADDLE_ENFORCE_EQ(
+        is_gpu_place(place), true,
+        platform::errors::PreconditionNotMet(
+            "wait_compute op can run on gpu place only for now."));
+
     PADDLE_ENFORCE_EQ(is_gpu_place(place), true,
                       platform::errors::PreconditionNotMet(
                           "wait_comm op can run on gpu place only for now."));
 
 #if defined(PADDLE_WITH_NCCL) || defined(PADDLE_WITH_RCCL)
-    int ring_id = Attr<int>("ring_id");
+    int ring_id = ctx.Attr<int>("ring_id");
 
     auto compute_stream =
         static_cast<platform::CUDADeviceContext*>(
@@ -67,25 +87,15 @@ class CWaitCommOp : public framework::OperatorBase {
   }
 };
 
-class CWaitCommOpMaker : public framework::OpProtoAndCheckerMaker {
- public:
-  void Make() {
-    AddInput("X", "(Tensor) Dependency of the variable need to sync")
-        .AsDuplicable();
-    AddOutput("Out", "(Tensor) Dependency of the variable need to sync")
-        .AsDuplicable();
-    AddAttr<int>("ring_id", "(int default 0) ring id.").SetDefault(0);
-    AddComment(R"DOC(
-CWaitComm Operator
-
-Compute stream wait Comm Stream with async event.
-)DOC");
-  }
-};
-
 }  // namespace operators
 }  // namespace paddle
 
 namespace ops = paddle::operators;
 
-REGISTER_OPERATOR(c_wait_comm, ops::CWaitCommOp, ops::CWaitCommOpMaker);
+REGISTER_OP_WITHOUT_GRADIENT(c_wait_comm, ops::CWaitCommOp,
+                             ops::CWaitCommOpMaker);
+
+REGISTER_OP_CUDA_KERNEL(c_wait_comm, ops::CWaitCommCudaKernel<int>,
+                        ops::CWaitCommCudaKernel<float>,
+                        ops::CWaitCommCudaKernel<double>,
+                        ops::CWaitCommCudaKernel<paddle::platform::float16>);
