@@ -21,6 +21,7 @@ from ...wrapped_decorator import signature_safe_contextmanager, wrap_decorator
 import warnings
 import numpy as np
 from paddle import _C_ops
+import paddle
 
 __all__ = ['AmpScaler']
 
@@ -254,7 +255,13 @@ class AmpScaler(object):
             _C_ops.check_finite_and_unscale(param_grads_fp32, self._scale,
                                             param_grads_fp32,
                                             temp_found_inf_fp32)
+
         self._found_inf = temp_found_inf_fp16 or temp_found_inf_fp32
+
+        self._found_inf = paddle.cast(self._found_inf, dtype="int32")
+        paddle.distributed.all_reduce(
+            self._found_inf, op=paddle.distributed.ReduceOp.MAX, group=None)
+        self._found_inf = paddle.cast(self._found_inf, dtype="bool")
 
     def _update(self):
         """

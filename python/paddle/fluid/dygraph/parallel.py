@@ -363,6 +363,12 @@ def sync_params_buffers(model,
     if len(model_vars) == 0:
         return
 
+    tracer = paddle.fluid.framework._dygraph_tracer()
+    origin_enable_autocast = tracer._enable_autocast
+    origin_enable_pure_fp16 = tracer._enable_pure_fp16
+    tracer._enable_autocast = False
+    tracer._enable_pure_fp16 = False
+
     # group size is 128M
     coalesced_vars = build_groups(model_vars, 128 * 1024 * 1024)
 
@@ -372,12 +378,15 @@ def sync_params_buffers(model,
 
     for coalesced_var, origin_vars, var_shapes in coalesced_vars:
         var_len = [np.prod(v_shape) for v_shape in var_shapes]
-        paddle.fluid.framework._dygraph_tracer().trace_op(
+        tracer.trace_op(
             type='split',
             inputs={'X': coalesced_var},
             outputs={'Out': origin_vars},
             attrs={'sections': var_len,
                    'axis': 0})
+
+    tracer._enable_autocast = origin_enable_autocast
+    tracer._enable_pure_fp16 = origin_enable_pure_fp16
 
 
 class DataParallel(layers.Layer):

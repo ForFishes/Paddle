@@ -265,7 +265,8 @@ class PipelineParallel(MetaParallelBase):
 
     def _optimizer_step(self):
         if self.scaler:
-            self.scaler.minimize(self.optimizer, self.train_loss)
+            # self.scaler.minimize(self.optimizer, self.train_loss)
+            self.scaler.minimize(self.train_loss)
         else:
             self.optimizer.step()
 

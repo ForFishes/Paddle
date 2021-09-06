@@ -199,6 +199,7 @@ class _HPRecomputeFunction(PyLayer):
         tracer = framework._dygraph_tracer()
         ctx.is_fw_autocast = tracer._enable_autocast
         ctx.amp_white_list, ctx.amp_black_list = tracer._get_amp_op_list()
+        ctx.enable_pure_fp16 = tracer._enable_pure_fp16
 
         with paddle.no_grad():
             outputs = run_function(*args)

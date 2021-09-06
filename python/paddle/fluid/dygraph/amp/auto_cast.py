@@ -207,8 +207,10 @@ def check_models(models):
 
 def check_optimizers(optimizers):
     for optimizer in optimizers:
-        if not isinstance(optimizer, (paddle.optimizer.Optimizer,
-                                      paddle.fluid.optimizer.Optimizer)):
+        if not isinstance(optimizer, (
+                paddle.optimizer.Optimizer, paddle.fluid.optimizer.Optimizer,
+                paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.
+                HybridParallelOptimizer)):
             raise RuntimeError(
                 "Current train mode is pure fp16, optimizers should be paddle.optimizer.Optimizer or paddle.fluid.optimizer.Optimizer, but receive {}.".
                 format(type(optimizer)))
@@ -285,7 +287,9 @@ def amp_guard(enable=True,
                 "models must be either a single model or a list of models.")
 
         if isinstance(optimizers, (paddle.optimizer.Optimizer,
-                                   paddle.fluid.optimizer.Optimizer)):
+                                   paddle.fluid.optimizer.Optimizer,
+                                   paddle.distributed.fleet.meta_optimizers.
+                                   dygraph_optimizer.HybridParallelOptimizer)):
             optimizers = [optimizers]
             check_optimizers(optimizers)
         elif isinstance(optimizers, list):
@@ -394,8 +398,10 @@ def amp_decorator(mode='pure_fp16',
             "models must be either a single model or a list of models.")
 
     optimizers_is_list = False
-    if isinstance(optimizers, (paddle.optimizer.Optimizer,
-                               paddle.fluid.optimizer.Optimizer)):
+    if isinstance(optimizers,
+                  (paddle.optimizer.Optimizer, paddle.fluid.optimizer.Optimizer,
+                   paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.
+                   HybridParallelOptimizer)):
         optimizers_is_list = False
         optimizers = [optimizers]
         check_optimizers(optimizers)

@@ -5931,14 +5931,16 @@ class ParamBase(core.VarBase):
         return new_param
 
     def _copy_to(self, device, blocking):
-        print("in ParamBase copy_to func")
+        # print("in ParamBase copy_to func")
         state = copy.deepcopy(self.__dict__)
         new_param = ParamBase(self.shape, self.dtype, **state)
         core.varbase_copy(self, new_param, device, blocking)
+        # need copy is_distributed attribute
+        new_param.is_distributed = self.is_distributed
         return new_param
 
     def to(self, dtype, device, blocking):
-        print("in ParamBase cast dtype")
+        # print("in ParamBase cast dtype")
         new_t = self._copy_to(device, blocking)
         if dtype is not None and dtype != self.dtype:
             _dygraph_tracer().trace_op(

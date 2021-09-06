@@ -117,8 +117,18 @@ def broadcast_dp_parameters(model, hcg):
 def fused_allreduce_gradients(parameter_list, hcg):
     data_parallel_group = hcg.get_data_parallel_group()
     logger.debug("dp start fuse allreduce gradients")
+
+    tracer = paddle.fluid.framework._dygraph_tracer()
+    origin_enable_autocast = tracer._enable_autocast
+    origin_enable_pure_fp16 = tracer._enable_pure_fp16
+    tracer._enable_autocast = False
+    tracer._enable_pure_fp16 = False
+
     with framework.no_grad():
         _apply_collective_grads(parameter_list, data_parallel_group)
+
+    tracer._enable_autocast = origin_enable_autocast
+    tracer._enable_pure_fp16 = origin_enable_pure_fp16
 
 
 def sharding_reduce_gradients(parameter_list, hcg):
