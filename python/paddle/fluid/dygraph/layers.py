@@ -121,6 +121,13 @@ class Layer(core.Layer):
         self._forward_pre_hooks = collections.OrderedDict()
         self._forward_post_hooks = collections.OrderedDict()
 
+        self._parameters_transform_map = {}
+        self._buffers_transform_map = {}
+
+        self._casted_by_pure_fp16 = False
+
+        self._state_dict_hooks = collections.OrderedDict()
+
     def train(self):
         """
         Sets this Layer and all its sublayers to training mode.
@@ -1259,6 +1266,11 @@ class Layer(core.Layer):
         final_str += ')'
         return final_str
 
+    def register_state_dict_hook(self, hook):
+        hook_remove_helper = HookRemoveHelper(self._state_dict_hooks)
+        self._state_dict_hooks[hook_remove_helper._hook_id] = hook
+        return hook_remove_helper
+
     def state_dict(self,
                    destination=None,
                    include_sublayers=True,
@@ -1303,6 +1315,12 @@ class Layer(core.Layer):
                             destination_temp, include_sublayers,
                             structured_name_prefix + layer_name + "."))
                     destination = destination_temp
+
+        for state_dict_hook in self._state_dict_hooks.values():
+            hook_result = state_dict_hook(destination)
+            if hook_result is not None:
+                destination = hook_result
+
         return destination
 
     @framework.deprecate_stat_dict
@@ -1404,8 +1422,11 @@ class Layer(core.Layer):
                         ).stop_gradient
                         self._parameters[key]._set_grad_ivar(grad_applied)
 
+            self._parameters_transform_map[id(param)] = [param_applied, key]
+
         for key, buf in self._buffers.items():
             self._buffers[key] = func(buf, device, dtype, blocking)
+            self._buffers_transform_map[id(buf)] = [self._buffers[key], key]
 
     def to(self, device=None, dtype=None, blocking=None):
         '''
@@ -1501,6 +1522,7 @@ class Layer(core.Layer):
             return new_t
 
         self._apply(transform, device, dtype, blocking)
+        self._dtype = dtype
 
     # [aliases] Compatible with old method names
     set_dict = set_state_dict
