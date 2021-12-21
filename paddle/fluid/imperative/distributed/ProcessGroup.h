@@ -62,20 +62,20 @@ struct ProcessGroupStrategy {
 
 class ProcessGroup {
  public:
-  class Work {
-   public:
-    Work(int rank, OpType opType,
-         const std::vector<framework::Tensor>& inputTensors);
+  // class Work {
+  //  public:
+  //   // Work(int rank, OpType opType,
+  //   //      const std::vector<framework::Tensor>& inputTensors);
 
-    virtual ~Work();
+  //   // virtual ~Work();
 
-   protected:
-    const int rank_;
-    OpType opType_;
-  };
+  //  protected:
+  //   const int rank_;
+  //   OpType opType_;
+  // };
 
   explicit ProcessGroup(int rank, int size);
-  virtual ~ProcessGroup();
+  virtual ~ProcessGroup() {}
 
   int getRank() const { return rank_; }
 
@@ -93,12 +93,12 @@ class ProcessGroup {
 
   // }
 
-  virtual void allreduce(
-      // std::vector<framework::Tensor>& /* tensors */,
-      const AllreduceOptions& = AllreduceOptions()) {
-    // PADDLE_THROW(platform::errors::InvalidArgument(
-    //       "ProcessGroup%s does not support allreduce",  getBackendName()));
-  }
+  // virtual void allreduce(
+  //     // std::vector<framework::Tensor>& /* tensors */,
+  //     const AllreduceOptions& = AllreduceOptions()) {
+  //   // PADDLE_THROW(platform::errors::InvalidArgument(
+  //   //       "ProcessGroup%s does not support allreduce", getBackendName()));
+  // }
 
  protected:
   const int rank_;

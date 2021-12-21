@@ -42,13 +42,13 @@ namespace imperative {
 
 class ProcessGroupNCCL : public ProcessGroup {
  public:
-  class WorkNCCL : public ProcessGroup::Work,
-                   public std::enable_shared_from_this<WorkNCCL> {
-   public:
-    WorkNCCL(int rank, OpType OpType);
+  // class WorkNCCL : public ProcessGroup::Work,
+  //                  public std::enable_shared_from_this<WorkNCCL> {
+  //  public:
+  //   WorkNCCL(int rank, OpType OpType);
 
-    virtual ~WorkNCCL();
-  };
+  //   virtual ~WorkNCCL();
+  // };
 
   ProcessGroupNCCL(const ProcessGroupStrategy& strategy, int rank, int size);
 
