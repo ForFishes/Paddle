@@ -30,26 +30,13 @@ namespace py = pybind11;
 namespace paddle {
 namespace pybind {
 void BindDistributed(py::module *m) {
-  // auto processGroup =
-  //     py::class_<imperative::ProcessGroup,
-  //                std::shared_ptr<imperative::ProcessGroup>>(*m,
-  //                "ProcessGroup")
-  //         .def(py::init<int, int>())
-  //         .def("rank", &imperative::ProcessGroup::getRank)
-  //         .def("size", &imperative::ProcessGroup::getSize);
-  //         // .def("name", &imperative::ProcessGroup::getBackendName);
-
-  py::class_<imperative::ProcessGroup,
-             std::shared_ptr<imperative::ProcessGroup>>(*m, "ProcessGroup")
-      // .def(py::init<int, int>())
-      .def("rank", &imperative::ProcessGroup::getRank)
-      .def("size", &imperative::ProcessGroup::getSize);
-
-  py::class_<imperative::ProcessGroupNCCL, imperative::ProcessGroup,
-             std::shared_ptr<imperative::ProcessGroupNCCL>>(*m,
-                                                            "ProcessGroupNCCL")
-      .def(py::init<const imperative::ProcessGroupStrategy &, int, int>(),
-           py::call_guard<py::gil_scoped_release>());
+  auto processGroup =
+      py::class_<imperative::ProcessGroup,
+                 std::shared_ptr<imperative::ProcessGroup>>(*m, "ProcessGroup")
+          // .def(py::init<int, int>())
+          .def("rank", &imperative::ProcessGroup::getRank)
+          .def("size", &imperative::ProcessGroup::getSize)
+          .def("name", &imperative::ProcessGroup::getBackendName);
 
   // .def(
   //      "allreduce",
@@ -62,13 +49,12 @@ void BindDistributed(py::module *m) {
 
   // )
 
-  // auto processGroupNCCL =
-  //     py::class_<imperative::ProcessGroupNCCL,
-  //                std::shared_ptr<imperative::ProcessGroupNCCL>>(
-  //         *m, "ProcessGroupNCCL", processGroup)
-  //         .def(py::init<const imperative::ProcessGroupStrategy &, int,
-  //         int>(),
-  //              py::call_guard<py::gil_scoped_release>());
+  auto processGroupNCCL =
+      py::class_<imperative::ProcessGroupNCCL,
+                 std::shared_ptr<imperative::ProcessGroupNCCL>>(
+          *m, "ProcessGroupNCCL", processGroup)
+          .def(py::init<const imperative::ProcessGroupStrategy &, int, int>(),
+               py::call_guard<py::gil_scoped_release>());
 
   // define parallel strategy, it will be removed
   py::class_<imperative::ProcessGroupStrategy> pg_strategy(
