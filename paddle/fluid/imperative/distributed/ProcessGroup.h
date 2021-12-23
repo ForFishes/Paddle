@@ -82,7 +82,7 @@ class ProcessGroup {
   int getSize() const { return size_; }
 
   // subclass must override this method to return the backend name
-  // virtual const std::string getBackendName() const = 0;
+  virtual const std::string getBackendName() const = 0;
 
   // virtual std::shared_ptr<ProcessGroup::Work> allreduce(
   //   std::vector<framework::Tensor>& /* tensors */,
@@ -94,7 +94,7 @@ class ProcessGroup {
   // }
 
   // virtual void allreduce(
-  //     // std::vector<framework::Tensor>& /* tensors */,
+  //     std::vector<framework::Tensor>& /* tensors */,
   //     const AllreduceOptions& = AllreduceOptions()) {
   //   // PADDLE_THROW(platform::errors::InvalidArgument(
   //   //       "ProcessGroup%s does not support allreduce", getBackendName()));

@@ -54,9 +54,9 @@ class ProcessGroupNCCL : public ProcessGroup {
 
   ProcessGroupNCCL(const ProcessGroupStrategy& strategy, int rank, int size);
 
-  // const std::string getBackendName() const override {
-  //     return std::string(NCCL_BACKEND_NAME);
-  // }
+  const std::string getBackendName() const override {
+    return std::string(NCCL_BACKEND_NAME);
+  }
 
  protected:
   ProcessGroupStrategy strategy_;

@@ -54,11 +54,13 @@ class NCCLComm {
                                           ncclUniqueId commId) {
     auto comm = std::make_shared<NCCLComm>();
 
+    // int count = paddle::platform::GetGPUDeviceCount();
     // int device_id = paddle::platform::GetCurrentDeviceId();
-    paddle::platform::SetDeviceId(rank);
+    // paddle::platform::SetDeviceId(rank);
 
     ncclResult_t result = platform::dynload::ncclCommInitRank(
         &(comm->ncclComm_), numRanks, commId, rank);
+
     PADDLE_ENFORCE_EQ(
         result, ncclSuccess,
         platform::errors::Fatal("NCCL error in: " + std::string(__FILE__) +
