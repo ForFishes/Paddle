@@ -29,7 +29,7 @@ namespace py = pybind11;
 
 namespace paddle {
 namespace pybind {
-void BindDistributed(py::module* m) {
+void BindDistributed(py::module *m) {
   auto processGroup =
       py::class_<imperative::ProcessGroup,
                  std::shared_ptr<imperative::ProcessGroup>>(*m, "ProcessGroup")
@@ -53,8 +53,47 @@ void BindDistributed(py::module* m) {
       py::class_<imperative::ProcessGroupNCCL,
                  std::shared_ptr<imperative::ProcessGroupNCCL>>(
           *m, "ProcessGroupNCCL", processGroup)
-          .def(py::init<const imperative::ProcessGroupStrategy&, int, int>(),
+          .def(py::init<const imperative::ProcessGroupStrategy &, int, int>(),
                py::call_guard<py::gil_scoped_release>());
+
+  // define parallel strategy, it will be removed
+  py::class_<imperative::ProcessGroupStrategy> pg_strategy(
+      *m, "ProcessGroupStrategy", "");
+  pg_strategy.def(py::init())
+      .def_property("nranks",
+                    [](const imperative::ProcessGroupStrategy &self) {
+                      return self.nranks_;
+                    },
+                    [](imperative::ProcessGroupStrategy &self, int nranks) {
+                      self.nranks_ = nranks;
+                    })
+      .def_property("local_rank",
+                    [](const imperative::ProcessGroupStrategy &self) {
+                      return self.local_rank_;
+                    },
+                    [](imperative::ProcessGroupStrategy &self, int local_rank) {
+                      self.local_rank_ = local_rank;
+                    })
+      .def_property(
+          "trainer_endpoints",
+          [](const imperative::ProcessGroupStrategy &self) {
+            return self.trainer_endpoints_;
+          },
+          [](imperative::ProcessGroupStrategy &self,
+             std::vector<std::string> eps) { self.trainer_endpoints_ = eps; })
+      .def_property("current_endpoint",
+                    [](const imperative::ProcessGroupStrategy &self) {
+                      return self.current_endpoint_;
+                    },
+                    [](imperative::ProcessGroupStrategy &self,
+                       const std::string &ep) { self.current_endpoint_ = ep; })
+      .def_property("nrings",
+                    [](const imperative::ProcessGroupStrategy &self) {
+                      return self.nrings_;
+                    },
+                    [](imperative::ProcessGroupStrategy &self, int nrings) {
+                      self.nrings_ = nrings;
+                    });
 }
 
 }  // end namespace pybind

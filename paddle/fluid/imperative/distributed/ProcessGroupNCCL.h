@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "paddle/fluid/imperative/distributed/NCCLUtils.h"
 #include "paddle/fluid/imperative/distributed/ProcessGroup.h"
 #include "paddle/fluid/platform/dynload/nccl.h"
 #include "paddle/fluid/platform/enforce.h"
@@ -36,6 +37,7 @@ class Tensor;
 //     std::chrono::milliseconds(30 * 60 * 1000);
 
 constexpr const char* NCCL_BACKEND_NAME = "nccl";
+#define NCCL_UNIQUE_ID_BYTES 128
 
 namespace paddle {
 namespace imperative {
@@ -58,6 +60,7 @@ class ProcessGroupNCCL : public ProcessGroup {
 
  protected:
   ProcessGroupStrategy strategy_;
+  std::shared_ptr<NCCLComm> nccl_comm_;
 
  private:
   void BcastNCCLId(std::vector<ncclUniqueId>& nccl_ids, int root,  // NOLINT

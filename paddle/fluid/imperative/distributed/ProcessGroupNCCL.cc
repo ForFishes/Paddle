@@ -23,9 +23,24 @@
 namespace paddle {
 namespace imperative {
 
+std::string buildNcclUniqueIdStr(const ncclUniqueId &ncclID) {
+  const uint8_t *bytes = reinterpret_cast<const uint8_t *>(&ncclID);
+  std::ostringstream oss;
+  // for(const auto i : c10::irange(NCCL_UNIQUE_ID_BYTES)) {
+  //   oss << std::hex << static_cast<int>(bytes[i]);
+  // }
+  for (auto i = 0; i < NCCL_UNIQUE_ID_BYTES; ++i) {
+    oss << std::hex << static_cast<int>(bytes[i]);
+  }
+  return oss.str();
+}
+
 ProcessGroupNCCL::ProcessGroupNCCL(const ProcessGroupStrategy &strategy,
                                    int rank, int size)
-    : ProcessGroup(rank, size), strategy_(strategy) {}
+    : ProcessGroup(rank, size), strategy_(strategy) {
+  // construct ncllcomm
+  Init();
+}
 
 void ProcessGroupNCCL::BcastNCCLId(
     std::vector<ncclUniqueId> &nccl_ids,  // NOLINT
@@ -61,23 +76,12 @@ void ProcessGroupNCCL::Init() {
   }
   BcastNCCLId(nccl_ids, 0, server_fd);
 
-  // int gpu_id = BOOST_GET_CONST(platform::CUDAPlace, place_).device;
-  // for (int ring_id = 0; ring_id < strategy_.nrings_; ring_id++) {
-  //   VLOG(0) << "init nccl context nranks: " << strategy_.nranks_
-  //           << " local rank: " << strategy_.local_rank_ << " gpu id: " <<
-  //           gpu_id
-  //           << " ring id: " << ring_id;
-  //   // it will assign nccl_comm in CUDADeviceContext within ring_id
-  //   platform::NCCLCommContext::Instance().CreateComm(
-  //       &nccl_ids[ring_id], strategy_.nranks_, strategy_.local_rank_, gpu_id,
-  //       ring_id);
+  VLOG(1) << "init nccl rank:" << strategy_.local_rank_
+          << ", nranks:" << strategy_.nranks_
+          << ", nccl uniqueid: " << buildNcclUniqueIdStr(nccl_ids.front());
 
-  //   compute_events_.emplace_back(
-  //       platform::CudaEventResourcePool::Instance().New(
-  //           BOOST_GET_CONST(platform::CUDAPlace, place_).device));
-  //   comm_events_.emplace_back(platform::CudaEventResourcePool::Instance().New(
-  //       BOOST_GET_CONST(platform::CUDAPlace, place_).device));
-  // }
+  nccl_comm_ = NCCLComm::create(strategy_.nranks_, strategy_.local_rank_,
+                                nccl_ids.front());
 }
 
 }  //  namespace imperative
