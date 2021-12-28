@@ -21,8 +21,12 @@ limitations under the License. */
 #undef _XOPEN_SOURCE
 #endif
 
+#include "paddle/fluid/framework/lod_tensor.h"
+#include "paddle/fluid/framework/tensor.h"
 #include "paddle/fluid/imperative/distributed/ProcessGroup.h"
 #include "paddle/fluid/imperative/distributed/ProcessGroupNCCL.h"
+#include "paddle/fluid/imperative/distributed/Types.h"
+#include "paddle/fluid/imperative/layer.h"
 #include "paddle/fluid/pybind/distributed_py.h"
 
 namespace py = pybind11;
@@ -30,24 +34,37 @@ namespace py = pybind11;
 namespace paddle {
 namespace pybind {
 void BindDistributed(py::module *m) {
+  py::enum_<imperative::ReduceOp>(*m, "ReduceOp")
+      .value("SUM", imperative::ReduceOp::SUM)
+      .value("AVG", imperative::ReduceOp::AVG)
+      .value("MAX", imperative::ReduceOp::MAX)
+      .value("MIN", imperative::ReduceOp::MIN);
+
+  py::class_<imperative::AllreduceOptions>(*m, "AllreduceOptions")
+      .def(py::init<>())
+      .def_readwrite("reduceOp", &imperative::AllreduceOptions::reduceOp)
+      .def_readwrite("timeout", &imperative::AllreduceOptions::timeout);
+
   auto processGroup =
       py::class_<imperative::ProcessGroup,
                  std::shared_ptr<imperative::ProcessGroup>>(*m, "ProcessGroup")
           // .def(py::init<int, int>())
           .def("rank", &imperative::ProcessGroup::getRank)
           .def("size", &imperative::ProcessGroup::getSize)
-          .def("name", &imperative::ProcessGroup::getBackendName);
-
-  // .def(
-  //      "allreduce",
-  //      &imperative::ProcessGroup::allreduce,
-  //      // py::arg("tensors"),
-  //      py::arg("opts") = imperative::AllreduceOptions(),
-  //      py::call_guard<py::gil_scoped_release>());
-  // .def(
-  //      "allreduce",
-
-  // )
+          .def("name", &imperative::ProcessGroup::getBackendName)
+          .def(
+              "allreduce",
+              [](imperative::ProcessGroup &self, imperative::VarBase &vb,
+                 imperative::ReduceOp op) {
+                imperative::AllreduceOptions opts;
+                opts.reduceOp = op;
+                auto *x =
+                    vb.MutableVar()->GetMutable<paddle::framework::LoDTensor>();
+                std::vector<paddle::framework::Tensor> ts = {*x};
+                return self.allreduce(ts, opts);
+              },
+              py::arg("vb"), py::arg("op") = imperative::ReduceOp::SUM,
+              py::call_guard<py::gil_scoped_release>());
 
   auto processGroupNCCL =
       py::class_<imperative::ProcessGroupNCCL,

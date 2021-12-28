@@ -19,15 +19,17 @@
 #include <string>
 #include <vector>
 
+#include "paddle/fluid/framework/tensor.h"
+#include "paddle/fluid/framework/variable.h"
 #include "paddle/fluid/imperative/distributed/Types.h"
 #include "paddle/fluid/platform/enforce.h"
 
-namespace paddle {
-namespace framework {
-class Variable;
-class Tensor;
-}  // namespace framework
-}  // namespace paddle
+// namespace paddle {
+// namespace framework {
+// class Variable;
+// class Tensor;
+// }  // namespace framework
+// }  // namespace paddle
 
 constexpr auto kNoTimeout = std::chrono::milliseconds(0);
 constexpr auto kProcessGroupDefaultTimeout =
@@ -93,12 +95,11 @@ class ProcessGroup {
 
   // }
 
-  // virtual void allreduce(
-  //     std::vector<framework::Tensor>& /* tensors */,
-  //     const AllreduceOptions& = AllreduceOptions()) {
-  //   // PADDLE_THROW(platform::errors::InvalidArgument(
-  //   //       "ProcessGroup%s does not support allreduce", getBackendName()));
-  // }
+  virtual void allreduce(std::vector<paddle::framework::Tensor>& /* tensors */,
+                         const AllreduceOptions& = AllreduceOptions()) {
+    PADDLE_THROW(platform::errors::InvalidArgument(
+        "ProcessGroup%s does not support allreduce", getBackendName()));
+  }
 
  protected:
   const int rank_;

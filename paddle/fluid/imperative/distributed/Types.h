@@ -21,7 +21,7 @@ namespace paddle {
 namespace imperative {
 constexpr auto kUnsetTimeout = std::chrono::milliseconds(-1);
 
-enum class ReduceOp : std::uint8_t { SUM = 0, AVG, MAX, MIN };
+enum class ReduceOp : std::uint8_t { SUM = 0, AVG, MAX, MIN, PRODUCT };
 
 struct AllreduceOptions {
   ReduceOp reduceOp = ReduceOp::SUM;

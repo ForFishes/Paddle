@@ -24,6 +24,7 @@ limitations under the License. */
 #ifdef PADDLE_WITH_HIP
 #include <hip/hip_runtime.h>
 #endif
+#include "paddle/fluid/platform/cuda_device_guard.h"
 #include "paddle/fluid/platform/place.h"
 #include "paddle/fluid/platform/stream/cuda_stream.h"
 
@@ -157,6 +158,30 @@ class CudaEvent {
     PADDLE_ENFORCE_GPU_SUCCESS(hipEventRecord(event_, stream.raw_stream()));
 #else
     PADDLE_ENFORCE_GPU_SUCCESS(cudaEventRecord(event_, stream.raw_stream()));
+#endif
+  }
+
+  void Record(
+      const std::unique_ptr<paddle::platform::stream::CUDAStream>& stream) {
+#ifdef PADDLE_WITH_HIP
+    PADDLE_ENFORCE_GPU_SUCCESS(hipEventRecord(event_, stream->raw_stream()));
+#else
+    PADDLE_ENFORCE_GPU_SUCCESS(cudaEventRecord(event_, stream->raw_stream()));
+#endif
+  }
+
+  void Block(
+      const std::unique_ptr<paddle::platform::stream::CUDAStream>& stream) {
+    // CUDAGuard guard(stream.device_index());
+    auto dev_id =
+        BOOST_GET_CONST(platform::CUDAPlace, stream->GetPlace()).device;
+    platform::CUDADeviceGuard guard(dev_id);
+#ifdef PADDLE_WITH_HIP
+    PADDLE_ENFORCE_GPU_SUCCESS(
+        hipStreamWaitEvent(stream->raw_stream(), event_, 0));
+#else
+    PADDLE_ENFORCE_GPU_SUCCESS(
+        cudaStreamWaitEvent(stream->raw_stream(), event_, 0));
 #endif
   }
 
