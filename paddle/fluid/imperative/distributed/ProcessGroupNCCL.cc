@@ -119,31 +119,6 @@ void ProcessGroupNCCL::BcastNCCLId(
   }
 }
 
-void ProcessGroupNCCL::Init() {
-  int server_fd = -1;
-
-  std::vector<ncclUniqueId> nccl_ids;
-  nccl_ids.resize(strategy_.nrings_);
-
-  if (strategy_.local_rank_ == 0) {
-    // generate the unique ncclid on the root worker
-    for (size_t i = 0; i < nccl_ids.size(); ++i) {
-      platform::dynload::ncclGetUniqueId(&nccl_ids[i]);
-    }
-  } else {
-    server_fd = platform::SocketServer::GetInstance(strategy_.current_endpoint_)
-                    .socket();
-  }
-  BcastNCCLId(nccl_ids, 0, server_fd);
-
-  VLOG(3) << "init nccl rank:" << strategy_.local_rank_
-          << ", nranks:" << strategy_.nranks_
-          << ", nccl uniqueid: " << BuildNcclUniqueIdStr(nccl_ids.front());
-
-  nccl_comm_ = NCCLComm::create(strategy_.nranks_, strategy_.local_rank_,
-                                nccl_ids.front());
-}
-
 void ProcessGroupNCCL::BroadcastUniqueNCCLID(
     std::vector<ncclUniqueId>& nccl_ids,  // NOLINT
     OpType opType, const std::string& p2pKey, int p2pRank) {

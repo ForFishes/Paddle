@@ -98,8 +98,6 @@ class ProcessGroupNCCL : public ProcessGroup {
   void BcastNCCLId(std::vector<ncclUniqueId>& nccl_ids, int root,  // NOLINT
                    int server_fd);
 
-  void Init();
-
   void BroadcastUniqueNCCLID(std::vector<ncclUniqueId>& nccl_ids,  // NOLINT
                              OpType opType, const std::string& p2pKey,
                              int p2pRank);
