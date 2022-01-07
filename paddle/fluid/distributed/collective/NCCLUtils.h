@@ -28,7 +28,7 @@
 #include "paddle/fluid/platform/enforce.h"
 
 namespace paddle {
-namespace imperative {
+namespace distributed {
 
 std::string getNcclVersion();
 std::string ncclGetErrorWithVersion(ncclResult_t error);
@@ -53,6 +53,10 @@ class NCCLComm {
   static std::shared_ptr<NCCLComm> create(int numRanks, int rank,
                                           ncclUniqueId commId) {
     auto comm = std::make_shared<NCCLComm>();
+
+    // int count = paddle::platform::GetGPUDeviceCount();
+    // int device_id = paddle::platform::GetCurrentDeviceId();
+    // paddle::platform::SetDeviceId(rank);
 
     ncclResult_t result = platform::dynload::ncclCommInitRank(
         &(comm->ncclComm_), numRanks, commId, rank);
@@ -117,5 +121,5 @@ class NCCLComm {
   std::string commFailureReason_;
 };
 
-}  // namespace imperative
+}  // namespace distributed
 }  // namespace paddle

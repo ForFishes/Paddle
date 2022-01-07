@@ -12,21 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
-#include <chrono>
-#include <cstdint>
-#include <vector>
+#include "paddle/fluid/distributed/collective/ProcessGroup.h"
 
 namespace paddle {
-namespace imperative {
-constexpr auto kUnsetTimeout = std::chrono::milliseconds(-1);
+namespace distributed {
 
-enum class ReduceOp : std::uint8_t { SUM = 0, AVG, MAX, MIN, PRODUCT };
+// ProcessGroup::Work::Work(int rank, OpType opType,
+//                          const std::vector<framework::Tensor>& inputTensors)
+//     : rank_(rank), opType_(opType) {}
 
-struct AllreduceOptions {
-  ReduceOp reduceOp = ReduceOp::SUM;
-  std::chrono::milliseconds timeout = kUnsetTimeout;
-};
+ProcessGroup::ProcessGroup(int rank, int size) : rank_(rank), size_(size) {}
 
-}  //  namespace imperative
+}  //  namespace distributed
 }  //  namespace paddle

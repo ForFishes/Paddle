@@ -19,24 +19,17 @@
 #include <string>
 #include <vector>
 
+#include "paddle/fluid/distributed/collective/Types.h"
 #include "paddle/fluid/framework/tensor.h"
 #include "paddle/fluid/framework/variable.h"
-#include "paddle/fluid/imperative/distributed/Types.h"
 #include "paddle/fluid/platform/enforce.h"
-
-// namespace paddle {
-// namespace framework {
-// class Variable;
-// class Tensor;
-// }  // namespace framework
-// }  // namespace paddle
 
 constexpr auto kNoTimeout = std::chrono::milliseconds(0);
 constexpr auto kProcessGroupDefaultTimeout =
     std::chrono::milliseconds(30 * 60 * 1000);
 
 namespace paddle {
-namespace imperative {
+namespace distributed {
 
 enum class OpType : std::uint8_t {
   BROADCAST = 0,
@@ -106,5 +99,5 @@ class ProcessGroup {
   const int size_;
 };
 
-}  //  namespace imperative
+}  //  namespace distributed
 }  //  namespace paddle

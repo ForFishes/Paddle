@@ -20,8 +20,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "paddle/fluid/imperative/distributed/NCCLUtils.h"
-#include "paddle/fluid/imperative/distributed/ProcessGroup.h"
+#include "paddle/fluid/distributed/collective/NCCLUtils.h"
+#include "paddle/fluid/distributed/collective/ProcessGroup.h"
 #include "paddle/fluid/platform/cuda_device_guard.h"
 #include "paddle/fluid/platform/device_context.h"
 #include "paddle/fluid/platform/device_event_base.h"
@@ -31,8 +31,6 @@
 #include "paddle/fluid/platform/gen_comm_id_helper.h"
 #include "paddle/fluid/platform/place.h"
 #include "paddle/fluid/platform/stream/cuda_stream.h"
-
-// #include "paddle/fluid/platform/device/gpu/nccl_helper.h"
 
 namespace paddle {
 namespace framework {
@@ -54,7 +52,7 @@ constexpr const char* NCCL_BACKEND_NAME = "NCCL";
 #define NCCL_UNIQUE_ID_BYTES 128
 
 namespace paddle {
-namespace imperative {
+namespace distributed {
 using Tensor = paddle::framework::Tensor;
 using Place = paddle::platform::Place;
 using CUDAStream = platform::stream::CUDAStream;
@@ -112,5 +110,5 @@ class ProcessGroupNCCL : public ProcessGroup {
       OpType opType, int p2pRank = 0, bool isSendRecvSelf = false);
 };
 
-}  //  namespace imperative
+}  //  namespace distributed
 }  //  namespace paddle

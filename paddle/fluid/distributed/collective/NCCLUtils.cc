@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "paddle/fluid/imperative/distributed/NCCLUtils.h"
+#include "paddle/fluid/distributed/collective/NCCLUtils.h"
 
 namespace paddle {
-namespace imperative {
+namespace distributed {
 
 std::string getNcclVersion() {
   static std::once_flag ncclGetVersionFlag;
@@ -58,5 +58,5 @@ ncclComm_t NCCLComm::getNcclComm() {
   return ncclComm_;
 }
 
-}  // namespace imperative
+}  // namespace distributed
 }  // namespace paddle

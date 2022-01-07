@@ -17,10 +17,10 @@
 #include <string>
 #include <vector>
 
-#include "paddle/fluid/imperative/distributed/ProcessGroupNCCL.h"
+#include "paddle/fluid/distributed/collective/ProcessGroupNCCL.h"
 
 namespace paddle {
-namespace imperative {
+namespace distributed {
 
 // NCCL op mapping
 const std::map<ReduceOp, ncclRedOp_t> ncclOp = {
@@ -97,10 +97,7 @@ void syncStreams(
 
 ProcessGroupNCCL::ProcessGroupNCCL(const ProcessGroupStrategy& strategy,
                                    int rank, int size)
-    : ProcessGroup(rank, size), strategy_(strategy) {
-  // construct ncllcomm
-  // Init();
-}
+    : ProcessGroup(rank, size), strategy_(strategy) {}
 
 void ProcessGroupNCCL::BcastNCCLId(
     std::vector<ncclUniqueId>& nccl_ids,  // NOLINT
@@ -219,5 +216,5 @@ void ProcessGroupNCCL::allreduce(std::vector<Tensor>& tensors,
              OpType::ALLREDUCE);
 }
 
-}  //  namespace imperative
+}  //  namespace distributed
 }  //  namespace paddle
