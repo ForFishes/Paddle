@@ -26,7 +26,11 @@ ProcessGroup::Work::~Work() = default;
 
 bool ProcessGroup::Work::IsCompleted() {
   std::lock_guard<std::mutex> lock(mutex_);
-  return
+  return is_completed_;
+}
+
+bool ProcessGroup::Work::Wait(std::chrono::milliseconds timeout) {
+  return false;
 }
 
 ProcessGroup::ProcessGroup(int rank, int size) : rank_(rank), size_(size) {}

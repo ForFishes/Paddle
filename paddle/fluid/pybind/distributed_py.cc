@@ -73,6 +73,13 @@ void BindDistributed(py::module *m) {
           .def(py::init<const distributed::ProcessGroupStrategy &, int, int>(),
                py::call_guard<py::gil_scoped_release>());
 
+  // py::class_<distributed::ProcessGroup::Work>
+  auto work =
+      py::class_<distributed::ProcessGroup::Work,
+                 std::shared_ptr<distributed::ProcessGroup::Work>>(*m, "work")
+          // .def(py::init<>())
+          .def("is_completed", &distributed::ProcessGroup::Work::IsCompleted);
+
   // define parallel strategy, it will be removed
   py::class_<distributed::ProcessGroupStrategy> pg_strategy(
       *m, "ProcessGroupStrategy", "");

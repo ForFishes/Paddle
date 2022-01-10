@@ -95,12 +95,41 @@ void SyncStreams(
   }
 }
 
+std::shared_ptr<ProcessGroupNCCL::WorkNCCL> ProcessGroupNCCL::initWork(
+    std::vector<Place> places, int rank, OpType opType,
+    const std::vector<Tensor>& inputs) {
+  return std::make_shared<ProcessGroupNCCL::WorkNCCL>(places, rank, opType,
+                                                      inputs);
+}
+
 ProcessGroupNCCL::WorkNCCL::WorkNCCL(const std::vector<Place>& places, int rank,
                                      OpType OpType,
                                      const std::vector<Tensor>& inputs)
-    : Work(rank, inputs, OpType), places_(places) {}
+    : Work(rank, inputs, OpType), places_(places) {
+  ncclEndEvents_ = std::make_shared<std::vector<CudaEvent>>(places.size());
+  ncclComms_.resize(places.size());
+}
 
 ProcessGroupNCCL::WorkNCCL::~WorkNCCL() {}
+
+void ProcessGroupNCCL::WorkNCCL::SetOutputs(
+    std::vector<Tensor>& outputs) {  // NOLINT
+  outputs_ = std::make_shared<std::vector<Tensor>>(outputs);
+}
+
+bool ProcessGroupNCCL::WorkNCCL::IsCompleted() {
+  for (size_t i = 0; i < places_.size(); ++i) {
+    if (!(*ncclEndEvents_)[i].Query()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool ProcessGroupNCCL::WorkNCCL::Wait(std::chrono::milliseconds timeout) {
+  return false;
+}
 
 ProcessGroupNCCL::ProcessGroupNCCL(const ProcessGroupStrategy& strategy,
                                    int rank, int size)
@@ -193,33 +222,43 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
 }
 
 template <typename Fn>
-void ProcessGroupNCCL::collective(std::vector<Tensor>& inputs,
-                                  std::vector<Tensor>& outputs, Fn fn,
-                                  OpType op_type) {
+std::shared_ptr<ProcessGroup::Work> ProcessGroupNCCL::collective(
+    std::vector<Tensor>& inputs, std::vector<Tensor>& outputs, Fn fn,
+    OpType op_type) {
   const auto places = GetPlaceList(inputs);
   const auto key = GetKeyFromPlaces(places);
   auto& nccl_comms = GetNCCLComm(key, places, op_type);
   SyncStreams(places, places_to_events_[key], places_to_streams_[key]);
 
+  auto work = initWork(places, rank_, op_type, inputs);
+  work->SetOutputs(outputs);
+
   for (size_t i = 0; i < inputs.size(); ++i) {
     auto& nccl_stream = places_to_streams_[key][i];
     fn(inputs[i], outputs[i], nccl_comms[i]->getNcclComm(), nccl_stream);
   }
+
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    auto& nccl_stream = places_to_streams_[key][i];
+    (*work->ncclEndEvents_)[i].Record(nccl_stream);
+  }
+
+  return work;
 }
 
-void ProcessGroupNCCL::allreduce(std::vector<Tensor>& tensors,
-                                 const AllreduceOptions& opts) {
+std::shared_ptr<ProcessGroup::Work> ProcessGroupNCCL::allreduce(
+    std::vector<Tensor>& tensors, const AllreduceOptions& opts) {
   auto tensor = tensors.back();
   auto place = tensor.place();
-  collective(tensors, tensors,
-             [&](Tensor& input, Tensor& output, ncclComm_t comm,
-                 std::unique_ptr<CUDAStream>& stream) {
-               return platform::dynload::ncclAllReduce(
-                   input.mutable_data(place), output.mutable_data(place),
-                   input.numel(), ToNCCLDataType(input.type()),
-                   ncclOp.at(opts.reduceOp), comm, stream->raw_stream());
-             },
-             OpType::ALLREDUCE);
+  return collective(tensors, tensors,
+                    [&](Tensor& input, Tensor& output, ncclComm_t comm,
+                        std::unique_ptr<CUDAStream>& stream) {
+                      return platform::dynload::ncclAllReduce(
+                          input.mutable_data(place), output.mutable_data(place),
+                          input.numel(), ToNCCLDataType(input.type()),
+                          ncclOp.at(opts.reduceOp), comm, stream->raw_stream());
+                    },
+                    OpType::ALLREDUCE);
 }
 
 }  //  namespace distributed

@@ -24,7 +24,7 @@
 #include "paddle/fluid/framework/variable.h"
 #include "paddle/fluid/platform/enforce.h"
 
-constexpr auto kNoTimeout = std::chrono::milliseconds(0);
+constexpr auto kWaitTimeout = std::chrono::milliseconds(0);
 constexpr auto kProcessGroupDefaultTimeout =
     std::chrono::milliseconds(30 * 60 * 1000);
 
@@ -59,16 +59,18 @@ class ProcessGroup {
  public:
   class Work {
    public:
-    Work(int rank, const std::vector<framework::Tensor>& inputTensors,
+    Work(int rank = 0, const std::vector<framework::Tensor>& inputTensors,
          OpType opType = OpType::UNKNOWN);
 
     virtual ~Work();
     virtual bool IsCompleted();
+    virtual bool Wait(std::chrono::milliseconds timeout = kWaitTimeout);
 
    protected:
     const int rank_;
     OpType opType_;
     std::mutex mutex_;
+    bool is_completed_ = false;
   };
 
   explicit ProcessGroup(int rank, int size);
@@ -81,17 +83,9 @@ class ProcessGroup {
   // subclass must override this method to return the backend name
   virtual const std::string getBackendName() const = 0;
 
-  // virtual std::shared_ptr<ProcessGroup::Work> allreduce(
-  //   std::vector<framework::Tensor>& /* tensors */,
-  //   const AllreduceOptions& = AllreduceOptions()
-  // ){
-  //   // PADDLE_THROW(platform::errors::InvalidArgument(
-  //   //       "ProcessGroup%s does not support allreduce", getBackendName()));
-
-  // }
-
-  virtual void allreduce(std::vector<paddle::framework::Tensor>& /* tensors */,
-                         const AllreduceOptions& = AllreduceOptions()) {
+  virtual std::shared_ptr<ProcessGroup::Work> allreduce(
+      std::vector<paddle::framework::Tensor>& /* tensors */,
+      const AllreduceOptions& = AllreduceOptions()) {
     PADDLE_THROW(platform::errors::InvalidArgument(
         "ProcessGroup%s does not support allreduce", getBackendName()));
   }

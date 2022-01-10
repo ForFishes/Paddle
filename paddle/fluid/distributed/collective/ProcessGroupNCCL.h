@@ -66,13 +66,24 @@ class ProcessGroupNCCL : public ProcessGroup {
     WorkNCCL(const std::vector<Place>& places, int rank, OpType OpType,
              const std::vector<Tensor>& inputs);
 
-    bool IsStarted();
-    // bool IsCompleted()
+    // bool IsStarted();
+    bool IsCompleted();
+
+    bool Wait(std::chrono::milliseconds timeout = kWaitTimeout);
+
+    void SetOutputs(std::vector<Tensor>& outputs);  // NOLINT
+
+    virtual ~WorkNCCL();
+
+    std::shared_ptr<std::vector<CudaEvent>> ncclEndEvents_;
 
    protected:
     std::vector<Place> places_;
 
-    virtual ~WorkNCCL();
+    std::vector<std::shared_ptr<NCCLComm>> ncclComms_;
+    std::shared_ptr<std::vector<Tensor>> outputs_;
+
+   private:
   };
 
   ProcessGroupNCCL(const ProcessGroupStrategy& strategy, int rank, int size);
@@ -81,8 +92,14 @@ class ProcessGroupNCCL : public ProcessGroup {
     return std::string(NCCL_BACKEND_NAME);
   }
 
-  void allreduce(std::vector<Tensor>& tensors,
-                 const AllreduceOptions& = AllreduceOptions()) override;
+  std::shared_ptr<ProcessGroup::Work> allreduce(
+      std::vector<Tensor>& tensors,
+      const AllreduceOptions& = AllreduceOptions()) override;
+
+ protected:
+  virtual std::shared_ptr<ProcessGroupNCCL::WorkNCCL> initWork(
+      std::vector<Place> places, int rank, OpType opType,
+      const std::vector<Tensor>& inputs);
 
  protected:
   ProcessGroupStrategy strategy_;
@@ -108,9 +125,10 @@ class ProcessGroupNCCL : public ProcessGroup {
                              int p2pRank);
 
   template <typename Fn>
-  void collective(std::vector<Tensor>& inputs,   // NOLINT
-                  std::vector<Tensor>& outputs,  // NOLINT
-                  Fn fn, OpType op_type);
+  std::shared_ptr<ProcessGroup::Work> collective(
+      std::vector<Tensor>& inputs,   // NOLINT
+      std::vector<Tensor>& outputs,  // NOLINT
+      Fn fn, OpType op_type);
 
   std::vector<std::shared_ptr<NCCLComm>>& GetNCCLComm(
       const std::string& places_key, const std::vector<Place>& places,
