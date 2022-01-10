@@ -60,13 +60,20 @@ using CudaEvent = paddle::platform::CudaEvent;
 
 class ProcessGroupNCCL : public ProcessGroup {
  public:
-  // class WorkNCCL : public ProcessGroup::Work,
-  //                  public std::enable_shared_from_this<WorkNCCL> {
-  //  public:
-  //   WorkNCCL(int rank, OpType OpType);
+  class WorkNCCL : public ProcessGroup::Work,
+                   public std::enable_shared_from_this<WorkNCCL> {
+   public:
+    WorkNCCL(const std::vector<Place>& places, int rank, OpType OpType,
+             const std::vector<Tensor>& inputs);
 
-  //   virtual ~WorkNCCL();
-  // };
+    bool IsStarted();
+    // bool IsCompleted()
+
+   protected:
+    std::vector<Place> places_;
+
+    virtual ~WorkNCCL();
+  };
 
   ProcessGroupNCCL(const ProcessGroupStrategy& strategy, int rank, int size);
 

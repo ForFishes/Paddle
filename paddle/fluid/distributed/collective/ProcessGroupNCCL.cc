@@ -81,7 +81,7 @@ std::string GetKeyFromPlaces(const std::vector<Place>& places) {
   return placeList;
 }
 
-void syncStreams(
+void SyncStreams(
     const std::vector<Place>& places,
     std::vector<CudaEvent>& ncclEvents,                       // NOLINT
     std::vector<std::unique_ptr<CUDAStream>>& ncclStreams) {  // NOLINT
@@ -94,6 +94,13 @@ void syncStreams(
     ncclEvents[i].Block(ncclStreams[i]);
   }
 }
+
+ProcessGroupNCCL::WorkNCCL::WorkNCCL(const std::vector<Place>& places, int rank,
+                                     OpType OpType,
+                                     const std::vector<Tensor>& inputs)
+    : Work(rank, inputs, OpType), places_(places) {}
+
+ProcessGroupNCCL::WorkNCCL::~WorkNCCL() {}
 
 ProcessGroupNCCL::ProcessGroupNCCL(const ProcessGroupStrategy& strategy,
                                    int rank, int size)
@@ -164,7 +171,6 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
 
   PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclGroupStart());
 
-  // only support one place
   for (size_t i = 0; i < places.size(); ++i) {
     auto dev_id = BOOST_GET_CONST(platform::CUDAPlace, places[i]).device;
 
@@ -193,7 +199,7 @@ void ProcessGroupNCCL::collective(std::vector<Tensor>& inputs,
   const auto places = GetPlaceList(inputs);
   const auto key = GetKeyFromPlaces(places);
   auto& nccl_comms = GetNCCLComm(key, places, op_type);
-  syncStreams(places, places_to_events_[key], places_to_streams_[key]);
+  SyncStreams(places, places_to_events_[key], places_to_streams_[key]);
 
   for (size_t i = 0; i < inputs.size(); ++i) {
     auto& nccl_stream = places_to_streams_[key][i];

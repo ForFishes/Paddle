@@ -57,17 +57,19 @@ struct ProcessGroupStrategy {
 
 class ProcessGroup {
  public:
-  // class Work {
-  //  public:
-  //   // Work(int rank, OpType opType,
-  //   //      const std::vector<framework::Tensor>& inputTensors);
+  class Work {
+   public:
+    Work(int rank, const std::vector<framework::Tensor>& inputTensors,
+         OpType opType = OpType::UNKNOWN);
 
-  //   // virtual ~Work();
+    virtual ~Work();
+    virtual bool IsCompleted();
 
-  //  protected:
-  //   const int rank_;
-  //   OpType opType_;
-  // };
+   protected:
+    const int rank_;
+    OpType opType_;
+    std::mutex mutex_;
+  };
 
   explicit ProcessGroup(int rank, int size);
   virtual ~ProcessGroup() {}
