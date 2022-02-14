@@ -1,4 +1,4 @@
-//   Copyright (c) 2021 PaddlePaddle Authors. All Rights Reserved.
+//   Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -32,18 +32,6 @@
 #include "paddle/fluid/platform/place.h"
 #include "paddle/fluid/platform/stream/cuda_stream.h"
 
-// namespace paddle {
-// namespace framework {
-// // class LoDTensor;
-// class ProgramDesc;
-// class Scope;
-// class Tensor;
-// }  // namespace framework
-
-// constexpr auto kNoTimeout = std::chrono::milliseconds(0);
-// constexpr auto kProcessGroupDefaultTimeout =
-//     std::chrono::milliseconds(30 * 60 * 1000);
-
 constexpr const char* NCCL_BACKEND_NAME = "NCCL";
 #define NCCL_UNIQUE_ID_BYTES 128
 
@@ -53,6 +41,7 @@ using Tensor = paddle::framework::Tensor;
 using Place = paddle::platform::Place;
 using CUDAStream = platform::stream::CUDAStream;
 using CudaEvent = paddle::platform::CudaEvent;
+using CUDADeviceContext = paddle::platform::CUDADeviceContext;
 
 class ProcessGroupNCCL : public ProcessGroup {
  public:
@@ -120,12 +109,15 @@ class ProcessGroupNCCL : public ProcessGroup {
 
   std::unordered_map<std::string, std::vector<CudaEvent>> places_to_events_;
 
+  std::unordered_map<std::string,
+                     std::vector<std::unique_ptr<CUDADeviceContext>>>
+      places_to_ctx_;
+
  private:
   void BcastNCCLId(std::vector<ncclUniqueId>& nccl_ids, int root,  // NOLINT
                    int server_fd);
 
-  void BroadcastUniqueNCCLID(std::vector<ncclUniqueId>& nccl_ids,  // NOLINT
-                             OpType opType);
+  void BroadcastUniqueNCCLID(std::vector<ncclUniqueId>& nccl_ids);  // NOLINT
 
   template <typename Fn>
   std::shared_ptr<ProcessGroup::Work> collective(
@@ -134,8 +126,7 @@ class ProcessGroupNCCL : public ProcessGroup {
       Fn fn, OpType op_type);
 
   std::vector<std::shared_ptr<NCCLComm>>& GetNCCLComm(
-      const std::string& places_key, const std::vector<Place>& places,
-      OpType opType);
+      const std::string& places_key, const std::vector<Place>& places);
 };
 
 }  //  namespace distributed

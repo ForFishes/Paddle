@@ -86,15 +86,20 @@ std::string GetKeyFromPlaces(const std::vector<Place>& places) {
 
 void SyncStreams(
     const std::vector<Place>& places,
-    std::vector<CudaEvent>& ncclEvents,                       // NOLINT
-    std::vector<std::unique_ptr<CUDAStream>>& ncclStreams) {  // NOLINT
+    std::vector<CudaEvent>& ncclEvents,                          // NOLINT
+    std::vector<std::unique_ptr<CUDADeviceContext>>& dev_ctx) {  // NOLINT
+  VLOG(3) << "Before collective, sync stream";
   for (size_t i = 0; i < places.size(); ++i) {
-    auto* dev_ctx = static_cast<platform::CUDADeviceContext*>(
+    auto* default_ctx = static_cast<platform::CUDADeviceContext*>(
         platform::DeviceContextPool::Instance().Get(places[i]));
-    auto cuda_ctx = dev_ctx->context();
-    auto& curr_stream = cuda_ctx->Stream();
-    ncclEvents[i].Record(curr_stream);
-    ncclEvents[i].Block(ncclStreams[i]);
+    auto event = ncclEvents[i].GetRawCudaEvent();
+    default_ctx->RecordEvent(event);
+    dev_ctx[i]->WaitEvent(event);
+
+    // auto cuda_ctx = dev_ctx->context();
+    // auto& curr_stream = cuda_ctx->Stream();
+    // ncclEvents[i].Record(curr_stream);
+    // ncclEvents[i].Block(ncclStreams[i]);
   }
 }
 
@@ -178,8 +183,8 @@ void ProcessGroupNCCL::BcastNCCLId(
 }
 
 void ProcessGroupNCCL::BroadcastUniqueNCCLID(
-    std::vector<ncclUniqueId>& nccl_ids,  // NOLINT
-    OpType opType) {
+    std::vector<ncclUniqueId>& nccl_ids) {  // NOLINT
+
   int server_fd = -1;
   if (rank_ != 0) {
     server_fd = platform::SocketServer::GetInstance(strategy_.current_endpoint_)
@@ -189,8 +194,7 @@ void ProcessGroupNCCL::BroadcastUniqueNCCLID(
 }
 
 std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
-    const std::string& places_key, const std::vector<Place>& places,
-    OpType opType) {
+    const std::string& places_key, const std::vector<Place>& places) {
   PADDLE_ENFORCE_EQ(places_key.empty(), false,
                     platform::errors::PreconditionNotMet(
                         "Not able to create/get the NCCL Communicator since "
@@ -202,7 +206,7 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
     }
   }
 
-  // NCCL communicator not cached, create a new entry
+  // NCCL communicator not cached, create a new communicator
   std::vector<std::shared_ptr<NCCLComm>> ncclComms;
   ncclComms.resize(places.size());
 
@@ -214,7 +218,7 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
   if (rank_ == 0) {
     PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclGetUniqueId(&nccl_id));
   }
-  BroadcastUniqueNCCLID(nccl_ids, opType);
+  BroadcastUniqueNCCLID(nccl_ids);
 
   VLOG(3) << "init nccl rank: " << strategy_.local_rank_
           << ", nranks: " << strategy_.nranks_ << ", place: " << places_key
@@ -223,6 +227,8 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
   std::vector<std::unique_ptr<CUDAStream>> streams;
   streams.resize(places.size());
 
+  std::vector<std::unique_ptr<CUDADeviceContext>> dev_ctx;
+
   PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclGroupStart());
 
   for (size_t i = 0; i < places.size(); ++i) {
@@ -230,6 +236,8 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
     platform::CUDADeviceGuard guard(dev_id);
     ncclComms[i] = NCCLComm::create(getSize(), getRank(), nccl_id);
     streams[i].reset(new CUDAStream(places[i]));
+
+    dev_ctx[i].reset(new CUDADeviceContext(places[i]));
   }
 
   PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclGroupEnd());
@@ -241,6 +249,8 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
   places_to_streams_.emplace(places_key, std::move(streams));
   places_to_events_.emplace(places_key, std::move(events));
   places_to_ncclcomm_.emplace(places_key, std::move(ncclComms));
+
+  places_to_ctx_.emplace(places_key, std::move(dev_ctx));
   return places_to_ncclcomm_[places_key];
 }
 
@@ -250,8 +260,10 @@ std::shared_ptr<ProcessGroup::Work> ProcessGroupNCCL::collective(
     OpType op_type) {
   const auto places = GetPlaceList(inputs);
   const auto key = GetKeyFromPlaces(places);
-  auto& nccl_comms = GetNCCLComm(key, places, op_type);
-  SyncStreams(places, places_to_events_[key], places_to_streams_[key]);
+  auto& nccl_comms = GetNCCLComm(key, places);
+  // SyncStreams(places, places_to_events_[key], places_to_streams_[key]);
+
+  SyncStreams(places, places_to_events_[key], places_to_ctx_[key]);
 
   auto work = CreateWork(places, rank_, op_type, inputs);
   work->SetOutputs(outputs);
