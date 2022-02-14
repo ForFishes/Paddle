@@ -1,5 +1,6 @@
 if(NOT WITH_PSCORE)
     add_subdirectory(fleet_executor)
+    add_subdirectory(collective)
     return()
 endif()
 

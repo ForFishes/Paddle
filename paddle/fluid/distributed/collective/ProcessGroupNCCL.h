@@ -32,17 +32,13 @@
 #include "paddle/fluid/platform/place.h"
 #include "paddle/fluid/platform/stream/cuda_stream.h"
 
-namespace paddle {
-namespace framework {
-class LoDTensor;
-class ProgramDesc;
-class Scope;
-class Tensor;
-}  // namespace framework
-namespace platform {
-class DeviceContext;
-}  // namespace platform
-}  // namespace paddle
+// namespace paddle {
+// namespace framework {
+// // class LoDTensor;
+// class ProgramDesc;
+// class Scope;
+// class Tensor;
+// }  // namespace framework
 
 // constexpr auto kNoTimeout = std::chrono::milliseconds(0);
 // constexpr auto kProcessGroupDefaultTimeout =
@@ -129,8 +125,7 @@ class ProcessGroupNCCL : public ProcessGroup {
                    int server_fd);
 
   void BroadcastUniqueNCCLID(std::vector<ncclUniqueId>& nccl_ids,  // NOLINT
-                             OpType opType, const std::string& p2pKey,
-                             int p2pRank);
+                             OpType opType);
 
   template <typename Fn>
   std::shared_ptr<ProcessGroup::Work> collective(
@@ -140,7 +135,7 @@ class ProcessGroupNCCL : public ProcessGroup {
 
   std::vector<std::shared_ptr<NCCLComm>>& GetNCCLComm(
       const std::string& places_key, const std::vector<Place>& places,
-      OpType opType, int p2pRank = 0, bool isSendRecvSelf = false);
+      OpType opType);
 };
 
 }  //  namespace distributed

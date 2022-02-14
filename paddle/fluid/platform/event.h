@@ -162,7 +162,7 @@ class CudaEvent {
   }
 
   void Record(
-      const std::unique_ptr<paddle::platform::stream::CUDAStream>& stream) {
+      const std::unique_ptr<paddle::platform::stream::CUDAStream> &stream) {
 #ifdef PADDLE_WITH_HIP
     PADDLE_ENFORCE_GPU_SUCCESS(hipEventRecord(event_, stream->raw_stream()));
 #else
@@ -171,10 +171,8 @@ class CudaEvent {
   }
 
   void Block(
-      const std::unique_ptr<paddle::platform::stream::CUDAStream>& stream) {
-    // CUDAGuard guard(stream.device_index());
-    auto dev_id =
-        BOOST_GET_CONST(platform::CUDAPlace, stream->GetPlace()).device;
+      const std::unique_ptr<paddle::platform::stream::CUDAStream> &stream) {
+    auto dev_id = stream->GetPlace().device;
     platform::CUDADeviceGuard guard(dev_id);
 #ifdef PADDLE_WITH_HIP
     PADDLE_ENFORCE_GPU_SUCCESS(

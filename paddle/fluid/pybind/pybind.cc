@@ -78,13 +78,9 @@ limitations under the License. */
 #include "paddle/fluid/platform/place.h"
 #include "paddle/fluid/platform/profiler.h"
 #include "paddle/fluid/pybind/cuda_streams_py.h"
-<<<<<<< HEAD
+#include "paddle/fluid/pybind/distributed_py.h"
 #include "paddle/pten/core/compat/convert_utils.h"
 #include "paddle/pten/core/lod_utils.h"
-=======
-#include "paddle/fluid/pybind/distributed_py.h"
-
->>>>>>> add processgroup
 #ifndef PADDLE_ON_INFERENCE
 #include "paddle/fluid/pybind/eager.h"
 #endif

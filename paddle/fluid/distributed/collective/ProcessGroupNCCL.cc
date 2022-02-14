@@ -179,7 +179,7 @@ void ProcessGroupNCCL::BcastNCCLId(
 
 void ProcessGroupNCCL::BroadcastUniqueNCCLID(
     std::vector<ncclUniqueId>& nccl_ids,  // NOLINT
-    OpType opType, const std::string& p2pKey, int p2pRank) {
+    OpType opType) {
   int server_fd = -1;
   if (rank_ != 0) {
     server_fd = platform::SocketServer::GetInstance(strategy_.current_endpoint_)
@@ -190,7 +190,7 @@ void ProcessGroupNCCL::BroadcastUniqueNCCLID(
 
 std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
     const std::string& places_key, const std::vector<Place>& places,
-    OpType opType, int p2pRank, bool isSendRecvSelf) {
+    OpType opType) {
   PADDLE_ENFORCE_EQ(places_key.empty(), false,
                     platform::errors::PreconditionNotMet(
                         "Not able to create/get the NCCL Communicator since "
@@ -214,7 +214,7 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
   if (rank_ == 0) {
     PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclGetUniqueId(&nccl_id));
   }
-  BroadcastUniqueNCCLID(nccl_ids, opType, places_key, p2pRank);
+  BroadcastUniqueNCCLID(nccl_ids, opType);
 
   VLOG(3) << "init nccl rank: " << strategy_.local_rank_
           << ", nranks: " << strategy_.nranks_ << ", place: " << places_key
@@ -226,10 +226,8 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
   PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclGroupStart());
 
   for (size_t i = 0; i < places.size(); ++i) {
-    auto dev_id = BOOST_GET_CONST(platform::CUDAPlace, places[i]).device;
-
+    auto dev_id = places[i].device;
     platform::CUDADeviceGuard guard(dev_id);
-
     ncclComms[i] = NCCLComm::create(getSize(), getRank(), nccl_id);
     streams[i].reset(new CUDAStream(places[i]));
   }
