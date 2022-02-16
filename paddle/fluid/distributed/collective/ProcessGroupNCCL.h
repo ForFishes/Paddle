@@ -23,7 +23,7 @@
 #include "paddle/fluid/distributed/collective/NCCLUtils.h"
 #include "paddle/fluid/distributed/collective/ProcessGroup.h"
 #include "paddle/fluid/platform/cuda_device_guard.h"
-#include "paddle/fluid/platform/device/gpu/nccl_helper.h"
+// #include "paddle/fluid/platform/device/gpu/nccl_helper.h"
 #include "paddle/fluid/platform/device_context.h"
 #include "paddle/fluid/platform/device_event_base.h"
 #include "paddle/fluid/platform/dynload/nccl.h"
@@ -38,6 +38,7 @@ constexpr const char* NCCL_BACKEND_NAME = "NCCL";
 
 namespace paddle {
 namespace distributed {
+
 using Tensor = paddle::framework::Tensor;
 using Place = paddle::platform::Place;
 using CUDAStream = platform::stream::CUDAStream;
@@ -101,12 +102,6 @@ class ProcessGroupNCCL : public ProcessGroup {
   std::mutex mutex_;
   std::unordered_map<std::string, std::vector<std::shared_ptr<NCCLComm>>>
       places_to_ncclcomm_;
-
-  //   std::unordered_map<std::string, std::vector<std::shared_ptr<NCCLComm>>>
-  //       ncclid_to_comm_;
-
-  //   std::unordered_map<std::string, std::vector<std::unique_ptr<CUDAStream>>>
-  //       places_to_streams_;
 
   std::unordered_map<std::string, std::vector<CudaEvent>> places_to_events_;
 

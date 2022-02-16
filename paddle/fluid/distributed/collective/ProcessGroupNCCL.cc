@@ -1,4 +1,4 @@
-//   Copyright (c) 2021 PaddlePaddle Authors. All Rights Reserved.
+//   Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "paddle/fluid/distributed/collective/ProcessGroupNCCL.h"
+#include "paddle/fluid/platform/device/gpu/nccl_helper.h"
 
 DECLARE_bool(nccl_blocking_wait);
 DECLARE_bool(use_stream_safe_cuda_allocator);
@@ -284,9 +285,6 @@ std::shared_ptr<ProcessGroup::Work> ProcessGroupNCCL::collective(
     cuda_guard.SetDevice(places[i]);
     auto stream = places_to_ctx_[key][i]->stream();
     work->nccl_events_[i].Record(stream);
-    // auto temp = CudaEvent();
-    // temp.Record(stream);
-    // work->nccl_events_.emplace_back(std::move(temp));
   }
 
   return work;
