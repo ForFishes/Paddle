@@ -57,12 +57,12 @@ struct ProcessGroupStrategy {
 
 class ProcessGroup {
  public:
-  class Work {
+  class Task {
    public:
-    Work(int rank, const std::vector<framework::Tensor>& inputTensors,
+    Task(int rank, const std::vector<framework::Tensor>& inputTensors,
          OpType opType = OpType::UNKNOWN);
 
-    virtual ~Work();
+    virtual ~Task();
     virtual bool IsCompleted();
     virtual bool Wait(std::chrono::milliseconds timeout = kWaitTimeout);
     virtual void Synchronize();
@@ -84,14 +84,14 @@ class ProcessGroup {
   // subclass must override this method to return the backend name
   virtual const std::string getBackendName() const = 0;
 
-  virtual std::shared_ptr<ProcessGroup::Work> allreduce(
+  virtual std::shared_ptr<ProcessGroup::Task> allreduce(
       std::vector<paddle::framework::Tensor>& /* tensors */,
       const AllreduceOptions& = AllreduceOptions()) {
     PADDLE_THROW(platform::errors::InvalidArgument(
         "ProcessGroup%s does not support allreduce", getBackendName()));
   }
 
-  virtual std::shared_ptr<ProcessGroup::Work> broadcast(
+  virtual std::shared_ptr<ProcessGroup::Task> broadcast(
       std::vector<paddle::framework::Tensor>& /* tensors */,
       const BroadcastOptions& = BroadcastOptions()) {
     PADDLE_THROW(platform::errors::InvalidArgument(

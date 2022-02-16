@@ -23,7 +23,6 @@
 #include "paddle/fluid/distributed/collective/NCCLUtils.h"
 #include "paddle/fluid/distributed/collective/ProcessGroup.h"
 #include "paddle/fluid/platform/cuda_device_guard.h"
-// #include "paddle/fluid/platform/device/gpu/nccl_helper.h"
 #include "paddle/fluid/platform/device_context.h"
 #include "paddle/fluid/platform/device_event_base.h"
 #include "paddle/fluid/platform/dynload/nccl.h"
@@ -47,10 +46,10 @@ using CUDADeviceContext = paddle::platform::CUDADeviceContext;
 
 class ProcessGroupNCCL : public ProcessGroup {
  public:
-  class WorkNCCL : public ProcessGroup::Work,
-                   public std::enable_shared_from_this<WorkNCCL> {
+  class NCCLTask : public ProcessGroup::Task,
+                   public std::enable_shared_from_this<NCCLTask> {
    public:
-    WorkNCCL(const std::vector<Place>& places, int rank, OpType OpType,
+    NCCLTask(const std::vector<Place>& places, int rank, OpType OpType,
              const std::vector<Tensor>& inputs);
 
     bool IsCompleted();
@@ -63,7 +62,7 @@ class ProcessGroupNCCL : public ProcessGroup {
 
     void SetOutputs(std::vector<Tensor>& outputs);  // NOLINT
 
-    virtual ~WorkNCCL();
+    virtual ~NCCLTask();
 
     std::shared_ptr<std::vector<CudaEvent>> ncclEndEvents_;
     std::vector<CudaEvent> nccl_events_;
@@ -83,16 +82,16 @@ class ProcessGroupNCCL : public ProcessGroup {
     return std::string(NCCL_BACKEND_NAME);
   }
 
-  std::shared_ptr<ProcessGroup::Work> allreduce(
+  std::shared_ptr<ProcessGroup::Task> allreduce(
       std::vector<Tensor>& tensors,
       const AllreduceOptions& = AllreduceOptions()) override;
 
-  std::shared_ptr<ProcessGroup::Work> broadcast(
+  std::shared_ptr<ProcessGroup::Task> broadcast(
       std::vector<Tensor>& tensors,
       const BroadcastOptions& = BroadcastOptions()) override;
 
  protected:
-  virtual std::shared_ptr<ProcessGroupNCCL::WorkNCCL> CreateWork(
+  virtual std::shared_ptr<ProcessGroupNCCL::NCCLTask> CreateTask(
       std::vector<Place> places, int rank, OpType opType,
       const std::vector<Tensor>& inputs);
 
@@ -118,7 +117,7 @@ class ProcessGroupNCCL : public ProcessGroup {
   void BroadcastUniqueNCCLID(std::vector<ncclUniqueId>& nccl_ids);  // NOLINT
 
   template <typename Fn>
-  std::shared_ptr<ProcessGroup::Work> collective(
+  std::shared_ptr<ProcessGroup::Task> collective(
       std::vector<Tensor>& inputs,   // NOLINT
       std::vector<Tensor>& outputs,  // NOLINT
       Fn fn, OpType op_type);

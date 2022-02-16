@@ -17,23 +17,23 @@
 namespace paddle {
 namespace distributed {
 
-ProcessGroup::Work::Work(int rank,
+ProcessGroup::Task::Task(int rank,
                          const std::vector<framework::Tensor>& inputTensors,
                          OpType opType)
     : rank_(rank), opType_(opType) {}
 
-ProcessGroup::Work::~Work() = default;
+ProcessGroup::Task::~Task() = default;
 
-bool ProcessGroup::Work::IsCompleted() {
+bool ProcessGroup::Task::IsCompleted() {
   std::lock_guard<std::mutex> lock(mutex_);
   return is_completed_;
 }
 
-bool ProcessGroup::Work::Wait(std::chrono::milliseconds timeout) {
+bool ProcessGroup::Task::Wait(std::chrono::milliseconds timeout) {
   return false;
 }
 
-void ProcessGroup::Work::Synchronize() {}
+void ProcessGroup::Task::Synchronize() {}
 
 ProcessGroup::ProcessGroup(int rank, int size) : rank_(rank), size_(size) {}
 
