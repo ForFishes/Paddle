@@ -23,6 +23,7 @@
 #include "paddle/fluid/distributed/collective/NCCLUtils.h"
 #include "paddle/fluid/distributed/collective/ProcessGroup.h"
 #include "paddle/fluid/platform/cuda_device_guard.h"
+#include "paddle/fluid/platform/device/gpu/nccl_helper.h"
 #include "paddle/fluid/platform/device_context.h"
 #include "paddle/fluid/platform/device_event_base.h"
 #include "paddle/fluid/platform/dynload/nccl.h"
@@ -51,7 +52,6 @@ class ProcessGroupNCCL : public ProcessGroup {
     WorkNCCL(const std::vector<Place>& places, int rank, OpType OpType,
              const std::vector<Tensor>& inputs);
 
-    // bool IsStarted();
     bool IsCompleted();
 
     void SynchronizeStreams();
@@ -65,6 +65,7 @@ class ProcessGroupNCCL : public ProcessGroup {
     virtual ~WorkNCCL();
 
     std::shared_ptr<std::vector<CudaEvent>> ncclEndEvents_;
+    std::vector<CudaEvent> nccl_events_;
 
    protected:
     std::vector<Place> places_;
@@ -101,17 +102,19 @@ class ProcessGroupNCCL : public ProcessGroup {
   std::unordered_map<std::string, std::vector<std::shared_ptr<NCCLComm>>>
       places_to_ncclcomm_;
 
-  std::unordered_map<std::string, std::vector<std::shared_ptr<NCCLComm>>>
-      ncclid_to_comm_;
+  //   std::unordered_map<std::string, std::vector<std::shared_ptr<NCCLComm>>>
+  //       ncclid_to_comm_;
 
-  std::unordered_map<std::string, std::vector<std::unique_ptr<CUDAStream>>>
-      places_to_streams_;
+  //   std::unordered_map<std::string, std::vector<std::unique_ptr<CUDAStream>>>
+  //       places_to_streams_;
 
   std::unordered_map<std::string, std::vector<CudaEvent>> places_to_events_;
 
   std::unordered_map<std::string,
                      std::vector<std::unique_ptr<CUDADeviceContext>>>
       places_to_ctx_;
+
+  std::vector<CudaEvent> events_;
 
  private:
   void BcastNCCLId(std::vector<ncclUniqueId>& nccl_ids, int root,  // NOLINT

@@ -145,6 +145,20 @@ class CudaEvent {
 #endif
   }
 
+  CudaEvent(CudaEvent &&other) {
+    std::swap(event_, other.event_);
+    std::swap(flags_, other.flags_);
+  }
+
+  CudaEvent &operator=(CudaEvent &&other) {
+    std::swap(event_, other.event_);
+    std::swap(flags_, other.flags_);
+    return *this;
+  }
+
+  CudaEvent(const CudaEvent &) = delete;
+  CudaEvent &operator=(const CudaEvent &) = delete;
+
   ~CudaEvent() {
 #ifdef PADDLE_WITH_HIP
     hipEventDestroy(event_);
@@ -158,28 +172,6 @@ class CudaEvent {
     PADDLE_ENFORCE_GPU_SUCCESS(hipEventRecord(event_, stream));
 #else
     PADDLE_ENFORCE_GPU_SUCCESS(cudaEventRecord(event_, stream));
-#endif
-  }
-
-  void Record(
-      const std::unique_ptr<paddle::platform::stream::CUDAStream> &stream) {
-#ifdef PADDLE_WITH_HIP
-    PADDLE_ENFORCE_GPU_SUCCESS(hipEventRecord(event_, stream->raw_stream()));
-#else
-    PADDLE_ENFORCE_GPU_SUCCESS(cudaEventRecord(event_, stream->raw_stream()));
-#endif
-  }
-
-  void Block(
-      const std::unique_ptr<paddle::platform::stream::CUDAStream> &stream) {
-    auto dev_id = stream->GetPlace().device;
-    platform::CUDADeviceGuard guard(dev_id);
-#ifdef PADDLE_WITH_HIP
-    PADDLE_ENFORCE_GPU_SUCCESS(
-        hipStreamWaitEvent(stream->raw_stream(), event_, 0));
-#else
-    PADDLE_ENFORCE_GPU_SUCCESS(
-        cudaStreamWaitEvent(stream->raw_stream(), event_, 0));
 #endif
   }
 
