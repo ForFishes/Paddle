@@ -79,14 +79,14 @@ std::string GetKeyFromPlaces(const std::vector<Place>& places) {
 
 void SyncStreams(
     const std::vector<Place>& places,
-    std::vector<CUDAEvent>& ncclEvents,                          // NOLINT
+    std::vector<EventManager>& ncclEvents,                       // NOLINT
     std::vector<std::unique_ptr<CUDADeviceContext>>& dev_ctx) {  // NOLINT
   for (size_t i = 0; i < places.size(); ++i) {
     auto* default_ctx = static_cast<platform::CUDADeviceContext*>(
         platform::DeviceContextPool::Instance().Get(places[i]));
-    auto stream = default_ctx->stream();
-    ncclEvents[i].Record(dev_ctx[i]->stream(), places[i].device);
-    ncclEvents[i].Block(stream, places[i].device);
+    // auto stream = default_ctx->stream();
+    ncclEvents[i].Record(*dev_ctx[i]);
+    ncclEvents[i].Block(*default_ctx);
   }
 }
 
@@ -178,7 +178,7 @@ void ProcessGroupNCCL::BroadcastUniqueNCCLID(
   BcastNCCLId(nccl_ids, 0, server_fd);
 }
 
-std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
+std::vector<std::shared_ptr<NCCLCommManager>>& ProcessGroupNCCL::GetNCCLComm(
     const std::string& places_key, const std::vector<Place>& places) {
   PADDLE_ENFORCE_EQ(places_key.empty(), false,
                     platform::errors::PreconditionNotMet(
@@ -193,7 +193,7 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
   }
 
   // NCCL communicator not cached, create a new communicator
-  std::vector<std::shared_ptr<NCCLComm>> ncclComms;
+  std::vector<std::shared_ptr<NCCLCommManager>> ncclComms;
   ncclComms.resize(places.size());
 
   // using vector just for broadcast
@@ -217,13 +217,13 @@ std::vector<std::shared_ptr<NCCLComm>>& ProcessGroupNCCL::GetNCCLComm(
 
   for (size_t i = 0; i < places.size(); ++i) {
     platform::CUDADeviceGuard guard(places[i]);
-    ncclComms[i] = NCCLComm::Create(GetSize(), GetRank(), nccl_id);
+    ncclComms[i] = NCCLCommManager::Create(GetSize(), GetRank(), nccl_id);
     dev_ctx[i].reset(new CUDADeviceContext(places[i]));
   }
 
   PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::ncclGroupEnd());
 
-  std::vector<CUDAEvent> events;
+  std::vector<EventManager> events;
   events.resize(places.size());
 
   places_to_events_.emplace(places_key, std::move(events));
@@ -271,10 +271,8 @@ std::shared_ptr<ProcessGroup::Task> ProcessGroupNCCL::Collective(
 
   for (size_t i = 0; i < inputs.size(); ++i) {
     cuda_guard.SetDevice(places[i]);
-    auto stream = places_to_ctx_[key][i]->stream();
-    task->control_events_[i].Record(stream, places[i].device);
+    task->control_events_[i].Record(*places_to_ctx_[key][i]);
   }
-
   return task;
 }
 

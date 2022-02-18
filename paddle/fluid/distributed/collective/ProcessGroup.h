@@ -20,7 +20,8 @@
 #include <vector>
 
 #include "paddle/fluid/distributed/collective/Types.h"
-#include "paddle/fluid/eager/api/all.h"
+// #include "paddle/fluid/eager/api/all.h"
+#include "paddle/fluid/eager/api/utils/tensor_utils.h"
 #include "paddle/fluid/framework/tensor.h"
 #include "paddle/fluid/framework/variable.h"
 #include "paddle/fluid/platform/enforce.h"

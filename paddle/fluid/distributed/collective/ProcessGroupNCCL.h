@@ -20,15 +20,13 @@
 #include <unordered_map>
 #include <vector>
 
-#include "paddle/fluid/distributed/collective/NCCLUtils.h"
+#include "paddle/fluid/distributed/collective/NCCLTools.h"
 #include "paddle/fluid/distributed/collective/ProcessGroup.h"
-#include "paddle/fluid/eager/api/all.h"
+#include "paddle/fluid/eager/api/utils/tensor_utils.h"
 #include "paddle/fluid/platform/cuda_device_guard.h"
 #include "paddle/fluid/platform/device_context.h"
-#include "paddle/fluid/platform/device_event_base.h"
 #include "paddle/fluid/platform/dynload/nccl.h"
 #include "paddle/fluid/platform/enforce.h"
-#include "paddle/fluid/platform/event.h"
 #include "paddle/fluid/platform/gen_comm_id_helper.h"
 #include "paddle/fluid/platform/place.h"
 #include "paddle/fluid/platform/stream/cuda_stream.h"
@@ -63,12 +61,12 @@ class ProcessGroupNCCL : public ProcessGroup {
 
     virtual ~NCCLTask();
 
-    std::vector<CUDAEvent> control_events_;
+    std::vector<EventManager> control_events_;
 
    protected:
     std::vector<Place> places_;
     std::chrono::time_point<std::chrono::steady_clock> start_time_;
-    std::vector<std::shared_ptr<NCCLComm>> ncclComms_;
+    std::vector<std::shared_ptr<NCCLCommManager>> ncclComms_;
     std::shared_ptr<std::vector<Tensor>> outputs_;
 
    private:
@@ -95,12 +93,12 @@ class ProcessGroupNCCL : public ProcessGroup {
 
  protected:
   ProcessGroupStrategy strategy_;
-  std::shared_ptr<NCCLComm> nccl_comm_;
+  std::shared_ptr<NCCLCommManager> nccl_comm_;
   std::mutex mutex_;
-  std::unordered_map<std::string, std::vector<std::shared_ptr<NCCLComm>>>
+  std::unordered_map<std::string, std::vector<std::shared_ptr<NCCLCommManager>>>
       places_to_ncclcomm_;
 
-  std::unordered_map<std::string, std::vector<CUDAEvent>> places_to_events_;
+  std::unordered_map<std::string, std::vector<EventManager>> places_to_events_;
 
   std::unordered_map<std::string,
                      std::vector<std::unique_ptr<CUDADeviceContext>>>
@@ -118,7 +116,7 @@ class ProcessGroupNCCL : public ProcessGroup {
       std::vector<Tensor>& outputs,  // NOLINT
       Fn fn, OpType op_type);
 
-  std::vector<std::shared_ptr<NCCLComm>>& GetNCCLComm(
+  std::vector<std::shared_ptr<NCCLCommManager>>& GetNCCLComm(
       const std::string& places_key, const std::vector<Place>& places);
 };
 
