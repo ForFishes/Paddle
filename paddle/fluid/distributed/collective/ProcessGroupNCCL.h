@@ -22,6 +22,7 @@
 
 #include "paddle/fluid/distributed/collective/NCCLUtils.h"
 #include "paddle/fluid/distributed/collective/ProcessGroup.h"
+#include "paddle/fluid/eager/api/all.h"
 #include "paddle/fluid/platform/cuda_device_guard.h"
 #include "paddle/fluid/platform/device_context.h"
 #include "paddle/fluid/platform/device_event_base.h"
@@ -38,10 +39,8 @@ constexpr const char* NCCL_BACKEND_NAME = "NCCL";
 namespace paddle {
 namespace distributed {
 
-using Tensor = paddle::framework::Tensor;
 using Place = paddle::platform::Place;
 using CUDAStream = platform::stream::CUDAStream;
-using CudaEvent = paddle::platform::CudaEvent;
 using CUDADeviceContext = paddle::platform::CUDADeviceContext;
 
 class ProcessGroupNCCL : public ProcessGroup {
@@ -64,8 +63,7 @@ class ProcessGroupNCCL : public ProcessGroup {
 
     virtual ~NCCLTask();
 
-    std::shared_ptr<std::vector<CudaEvent>> ncclEndEvents_;
-    std::vector<CudaEvent> nccl_events_;
+    std::vector<CUDAEvent> control_events_;
 
    protected:
     std::vector<Place> places_;
@@ -78,15 +76,15 @@ class ProcessGroupNCCL : public ProcessGroup {
 
   ProcessGroupNCCL(const ProcessGroupStrategy& strategy, int rank, int size);
 
-  const std::string getBackendName() const override {
+  const std::string GetBackendName() const override {
     return std::string(NCCL_BACKEND_NAME);
   }
 
-  std::shared_ptr<ProcessGroup::Task> allreduce(
+  std::shared_ptr<ProcessGroup::Task> AllReduce(
       std::vector<Tensor>& tensors,
       const AllreduceOptions& = AllreduceOptions()) override;
 
-  std::shared_ptr<ProcessGroup::Task> broadcast(
+  std::shared_ptr<ProcessGroup::Task> Broadcast(
       std::vector<Tensor>& tensors,
       const BroadcastOptions& = BroadcastOptions()) override;
 
@@ -102,13 +100,11 @@ class ProcessGroupNCCL : public ProcessGroup {
   std::unordered_map<std::string, std::vector<std::shared_ptr<NCCLComm>>>
       places_to_ncclcomm_;
 
-  std::unordered_map<std::string, std::vector<CudaEvent>> places_to_events_;
+  std::unordered_map<std::string, std::vector<CUDAEvent>> places_to_events_;
 
   std::unordered_map<std::string,
                      std::vector<std::unique_ptr<CUDADeviceContext>>>
       places_to_ctx_;
-
-  std::vector<CudaEvent> events_;
 
  private:
   void BcastNCCLId(std::vector<ncclUniqueId>& nccl_ids, int root,  // NOLINT
@@ -117,7 +113,7 @@ class ProcessGroupNCCL : public ProcessGroup {
   void BroadcastUniqueNCCLID(std::vector<ncclUniqueId>& nccl_ids);  // NOLINT
 
   template <typename Fn>
-  std::shared_ptr<ProcessGroup::Task> collective(
+  std::shared_ptr<ProcessGroup::Task> Collective(
       std::vector<Tensor>& inputs,   // NOLINT
       std::vector<Tensor>& outputs,  // NOLINT
       Fn fn, OpType op_type);

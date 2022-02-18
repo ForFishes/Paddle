@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "paddle/fluid/distributed/collective/Types.h"
+#include "paddle/fluid/eager/api/all.h"
 #include "paddle/fluid/framework/tensor.h"
 #include "paddle/fluid/framework/variable.h"
 #include "paddle/fluid/platform/enforce.h"
@@ -30,6 +31,8 @@ constexpr auto kProcessGroupDefaultTimeout =
 
 namespace paddle {
 namespace distributed {
+
+using Tensor = paddle::experimental::Tensor;
 
 enum class OpType : std::uint8_t {
   BROADCAST = 0,
@@ -59,7 +62,7 @@ class ProcessGroup {
  public:
   class Task {
    public:
-    Task(int rank, const std::vector<framework::Tensor>& inputTensors,
+    Task(int rank, const std::vector<Tensor>& inputTensors,
          OpType opType = OpType::UNKNOWN);
 
     virtual ~Task();
@@ -77,25 +80,24 @@ class ProcessGroup {
   explicit ProcessGroup(int rank, int size);
   virtual ~ProcessGroup() {}
 
-  int getRank() const { return rank_; }
+  int GetRank() const { return rank_; }
 
-  int getSize() const { return size_; }
+  int GetSize() const { return size_; }
 
-  // subclass must override this method to return the backend name
-  virtual const std::string getBackendName() const = 0;
+  virtual const std::string GetBackendName() const = 0;
 
-  virtual std::shared_ptr<ProcessGroup::Task> allreduce(
-      std::vector<paddle::framework::Tensor>& /* tensors */,
+  virtual std::shared_ptr<ProcessGroup::Task> AllReduce(
+      std::vector<Tensor>& /* tensors */,
       const AllreduceOptions& = AllreduceOptions()) {
     PADDLE_THROW(platform::errors::InvalidArgument(
-        "ProcessGroup%s does not support allreduce", getBackendName()));
+        "ProcessGroup%s does not support allreduce", GetBackendName()));
   }
 
-  virtual std::shared_ptr<ProcessGroup::Task> broadcast(
-      std::vector<paddle::framework::Tensor>& /* tensors */,
+  virtual std::shared_ptr<ProcessGroup::Task> Broadcast(
+      std::vector<Tensor>& /* tensors */,
       const BroadcastOptions& = BroadcastOptions()) {
     PADDLE_THROW(platform::errors::InvalidArgument(
-        "ProcessGroup%s does not support allreduce", getBackendName()));
+        "ProcessGroup%s does not support allreduce", GetBackendName()));
   }
 
  protected:

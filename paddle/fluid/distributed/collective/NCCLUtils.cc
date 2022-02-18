@@ -1,4 +1,4 @@
-//   Copyright (c) 2021 PaddlePaddle Authors. All Rights Reserved.
+//   Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 namespace paddle {
 namespace distributed {
 
-std::string getNcclVersion() {
+std::string GetNcclVersion() {
   static std::once_flag ncclGetVersionFlag;
   static std::string versionString;
 
@@ -41,12 +41,12 @@ std::string getNcclVersion() {
   return versionString;
 }
 
-std::string ncclGetErrorWithVersion(ncclResult_t error) {
+std::string NcclGetErrorWithVersion(ncclResult_t error) {
   return std::string(platform::dynload::ncclGetErrorString(error)) +
-         ", NCCL version " + getNcclVersion();
+         ", NCCL version " + GetNcclVersion();
 }
 
-ncclComm_t NCCLComm::getNcclComm() {
+ncclComm_t NCCLComm::GetNcclComm() {
   std::unique_lock<std::mutex> lock(mutex_);
   if (aborted_) {
     auto commFailureMsg =

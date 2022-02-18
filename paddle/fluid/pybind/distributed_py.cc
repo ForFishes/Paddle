@@ -1,4 +1,4 @@
-/* Copyright (c) 2021 PaddlePaddle Authors. All Rights Reserved.
+/* Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -11,8 +11,8 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
-#include <fcntl.h>
 
+#include <fcntl.h>
 #ifdef _POSIX_C_SOURCE
 #undef _POSIX_C_SOURCE
 #endif
@@ -28,11 +28,16 @@ limitations under the License. */
 #include "paddle/fluid/framework/tensor.h"
 #include "paddle/fluid/imperative/layer.h"
 #include "paddle/fluid/pybind/distributed_py.h"
+#include "paddle/fluid/pybind/eager_utils.h"
+#include "paddle/pten/api/all.h"
 
 namespace py = pybind11;
 
 namespace paddle {
 namespace pybind {
+
+using Tensor = paddle::experimental::Tensor;
+
 void BindDistributed(py::module *m) {
   py::enum_<distributed::ReduceOp>(*m, "ReduceOp")
       .value("SUM", distributed::ReduceOp::SUM)
@@ -46,48 +51,44 @@ void BindDistributed(py::module *m) {
       .def_readwrite("reduceOp", &distributed::AllreduceOptions::reduceOp)
       .def_readwrite("timeout", &distributed::AllreduceOptions::timeout);
 
-  auto processGroup =
+  auto ProcessGroup =
       py::class_<distributed::ProcessGroup,
                  std::shared_ptr<distributed::ProcessGroup>>(*m, "ProcessGroup")
           // .def(py::init<int, int>())
-          .def("rank", &distributed::ProcessGroup::getRank)
-          .def("size", &distributed::ProcessGroup::getSize)
-          .def("name", &distributed::ProcessGroup::getBackendName)
-          .def(
-              "allreduce",
-              [](distributed::ProcessGroup &self, imperative::VarBase &vb,
-                 distributed::ReduceOp op) {
-                distributed::AllreduceOptions opts;
-                opts.reduceOp = op;
-                auto *x =
-                    vb.MutableVar()->GetMutable<paddle::framework::LoDTensor>();
-                std::vector<paddle::framework::Tensor> ts = {*x};
-                return self.allreduce(ts, opts);
-              },
-              py::arg("vb"), py::arg("op") = distributed::ReduceOp::SUM,
-              py::call_guard<py::gil_scoped_release>())
-          .def(
-              "broadcast",
-              [](distributed::ProcessGroup &self, imperative::VarBase &vb,
-                 int source_rank) {
-                distributed::BroadcastOptions opts;
-                opts.source_rank = source_rank;
-                auto *x =
-                    vb.MutableVar()->GetMutable<paddle::framework::LoDTensor>();
-                std::vector<paddle::framework::Tensor> ts = {*x};
-                return self.broadcast(ts, opts);
-              },
-              py::arg("vb"), py::arg("source_rank"),
-              py::call_guard<py::gil_scoped_release>());
+          .def("rank", &distributed::ProcessGroup::GetRank)
+          .def("size", &distributed::ProcessGroup::GetSize)
+          .def("name", &distributed::ProcessGroup::GetBackendName)
+          .def("allreduce",
+               [](distributed::ProcessGroup &self, py::handle py_tensor,
+                  distributed::ReduceOp op) {
+                 auto tensor = CastPyArg2Tensor(py_tensor.ptr(), 0);
+                 distributed::AllreduceOptions opts;
+                 opts.reduceOp = op;
+                 std::vector<Tensor> tensors = {tensor};
+                 return self.AllReduce(tensors, opts);
+               },
+               py::arg("tensor"), py::arg("op") = distributed::ReduceOp::SUM,
+               py::call_guard<py::gil_scoped_release>())
+          .def("broadcast",
+               [](distributed::ProcessGroup &self, py::handle py_tensor,
+                  int source_rank) {
+                 auto tensor = CastPyArg2Tensor(py_tensor.ptr(), 0);
+                 distributed::BroadcastOptions opts;
+                 opts.source_rank = source_rank;
+                 std::vector<Tensor> tensors = {tensor};
+                 return self.Broadcast(tensors, opts);
+               },
+               py::arg("tensor"), py::arg("source_rank"),
+               py::call_guard<py::gil_scoped_release>());
 
-  auto processGroupNCCL =
+  auto ProcessGroupNCCL =
       py::class_<distributed::ProcessGroupNCCL,
                  std::shared_ptr<distributed::ProcessGroupNCCL>>(
-          *m, "ProcessGroupNCCL", processGroup)
+          *m, "ProcessGroupNCCL", ProcessGroup)
           .def(py::init<const distributed::ProcessGroupStrategy &, int, int>(),
                py::call_guard<py::gil_scoped_release>());
 
-  auto task =
+  auto Task =
       py::class_<distributed::ProcessGroup::Task,
                  std::shared_ptr<distributed::ProcessGroup::Task>>(*m, "work")
           // .def(py::init<>())

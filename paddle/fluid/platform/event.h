@@ -1,11 +1,8 @@
 /* Copyright (c) 2019 PaddlePaddle Authors. All Rights Reserved.
-
 licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
     http://www.apache.org/licenses/LICENSE-2.0
-
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -24,7 +21,6 @@ limitations under the License. */
 #ifdef PADDLE_WITH_HIP
 #include <hip/hip_runtime.h>
 #endif
-#include "paddle/fluid/platform/cuda_device_guard.h"
 #include "paddle/fluid/platform/place.h"
 #include "paddle/fluid/platform/stream/cuda_stream.h"
 
@@ -144,20 +140,6 @@ class CudaEvent {
     cudaEventCreateWithFlags(&event_, flags_);
 #endif
   }
-
-  CudaEvent(CudaEvent &&other) {
-    std::swap(event_, other.event_);
-    std::swap(flags_, other.flags_);
-  }
-
-  CudaEvent &operator=(CudaEvent &&other) {
-    std::swap(event_, other.event_);
-    std::swap(flags_, other.flags_);
-    return *this;
-  }
-
-  CudaEvent(const CudaEvent &) = delete;
-  CudaEvent &operator=(const CudaEvent &) = delete;
 
   ~CudaEvent() {
 #ifdef PADDLE_WITH_HIP

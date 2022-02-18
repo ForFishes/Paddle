@@ -20,9 +20,17 @@
 #include <string>
 #include <vector>
 
+#ifdef PADDLE_WITH_CUDA
+#include <cuda_runtime.h>
+#endif
+#ifdef PADDLE_WITH_HIP
+#include <hip/hip_runtime.h>
+#endif
+
 #include "boost/variant.hpp"
 #include "paddle/fluid/framework/data_type.h"
 #include "paddle/fluid/framework/variable.h"
+#include "paddle/fluid/platform/cuda_device_guard.h"
 #include "paddle/fluid/platform/device_context.h"
 #include "paddle/fluid/platform/dynload/nccl.h"
 #include "paddle/fluid/platform/enforce.h"
@@ -30,8 +38,8 @@
 namespace paddle {
 namespace distributed {
 
-std::string getNcclVersion();
-std::string ncclGetErrorWithVersion(ncclResult_t error);
+std::string GetNcclVersion();
+std::string NcclGetErrorWithVersion(ncclResult_t error);
 
 class NCCLComm {
  public:
@@ -50,7 +58,7 @@ class NCCLComm {
     }
   }
 
-  static std::shared_ptr<NCCLComm> create(int numRanks, int rank,
+  static std::shared_ptr<NCCLComm> Create(int numRanks, int rank,
                                           ncclUniqueId commId) {
     auto comm = std::make_shared<NCCLComm>();
 
@@ -61,14 +69,14 @@ class NCCLComm {
         result, ncclSuccess,
         platform::errors::Fatal("NCCL error in: " + std::string(__FILE__) +
                                 ":" + std::to_string(__LINE__) + ", " +
-                                ncclGetErrorWithVersion(result) + "\n"));
+                                NcclGetErrorWithVersion(result) + "\n"));
 
     comm->ncclId_ = commId;
     comm->rank_ = rank;
     return comm;
   }
 
-  ncclUniqueId getNcclId() { return ncclId_; }
+  ncclUniqueId GetNcclId() { return ncclId_; }
 
   // Must not be copyable
   NCCLComm(const NCCLComm&) = delete;
@@ -85,24 +93,24 @@ class NCCLComm {
     std::swap(ncclAsyncErr_, other.ncclAsyncErr_);
   }
 
-  ncclComm_t getNcclComm();
+  ncclComm_t GetNcclComm();
 
-  std::string getNcclCommFailureReason() const {
+  std::string GetNcclCommFailureReason() const {
     std::unique_lock<std::mutex> lock(mutex_);
     return commFailureReason_;
   }
 
-  void ncclCommAbort(std::string commFailureReason = "") {
+  void NcclCommAbort(std::string commFailureReason = "") {
     std::unique_lock<std::mutex> lock(mutex_);
     return;
   }
 
-  bool isAborted() const {
+  bool IsAborted() const {
     std::unique_lock<std::mutex> lock(mutex_);
     return aborted_;
   }
 
-  ncclResult_t checkForNcclError() {
+  ncclResult_t CheckForNcclError() {
     std::unique_lock<std::mutex> lock(mutex_);
     return ncclSuccess;
   }
@@ -115,6 +123,107 @@ class NCCLComm {
   int rank_;
   mutable std::mutex mutex_;
   std::string commFailureReason_;
+};
+
+class CUDAEvent {
+ public:
+  CUDAEvent() {}
+  explicit CUDAEvent(unsigned int flags) : flags_{flags} {}
+
+  ~CUDAEvent() {
+    try {
+      if (is_created_) {
+        platform::CUDADeviceGuard guard(device_index_);
+        cudaEventDestroy(event_);
+      }
+    } catch (...) { /* No throw */
+    }
+  }
+
+  CUDAEvent(const CUDAEvent&) = delete;
+  CUDAEvent& operator=(const CUDAEvent&) = delete;
+
+  CUDAEvent(CUDAEvent&& other) { moveHelper(std::move(other)); }
+
+  CUDAEvent& operator=(CUDAEvent&& other) {
+    moveHelper(std::move(other));
+    return *this;
+  }
+
+  operator cudaEvent_t() const { return GetRawCudaEvent(); }
+
+  bool isCreated() const { return is_created_; }
+
+  cudaEvent_t GetRawCudaEvent() const { return event_; }
+
+  bool Query() {
+#ifdef PADDLE_WITH_HIP
+    gpuError_t err = hipEventQuery(event_);
+    if (err == hipSuccess) {
+      return true;
+    }
+    if (err == hipErrorNotReady) {
+      return false;
+    }
+#else
+    gpuError_t err = cudaEventQuery(event_);
+    if (err == cudaSuccess) {
+      return true;
+    }
+    if (err == cudaErrorNotReady) {
+      return false;
+    }
+#endif
+    PADDLE_ENFORCE_GPU_SUCCESS(err);
+    return false;
+  }
+
+  void Record(const gpuStream_t& stream, int8_t device_index) {
+    if (!is_created_) {
+      createEvent(device_index);
+    }
+
+    platform::CUDADeviceGuard guard(device_index);
+
+    PADDLE_ENFORCE_GPU_SUCCESS(cudaEventRecord(event_, stream));
+    was_recorded_ = true;
+  }
+
+  void Block(const gpuStream_t& stream, int8_t device_index) {
+    if (is_created_) {
+      platform::CUDADeviceGuard guard(device_index);
+      PADDLE_ENFORCE_GPU_SUCCESS(cudaStreamWaitEvent(stream, event_, 0));
+    }
+  }
+
+  void synchronize() const {
+    if (is_created_) {
+      PADDLE_ENFORCE_GPU_SUCCESS(cudaEventSynchronize(event_));
+    }
+  }
+
+ private:
+  unsigned int flags_ = cudaEventDisableTiming;
+  bool is_created_ = false;
+  cudaEvent_t event_{};
+  int8_t device_index_{0};
+  bool was_recorded_ = false;
+
+  void createEvent(int device_index) {
+    device_index_ = device_index;
+    // CUDAGuard guard(device_index_);
+    platform::CUDADeviceGuard guard(device_index);
+    PADDLE_ENFORCE_GPU_SUCCESS(cudaEventCreateWithFlags(&event_, flags_));
+    is_created_ = true;
+  }
+
+  void moveHelper(CUDAEvent&& other) {
+    std::swap(flags_, other.flags_);
+    std::swap(is_created_, other.is_created_);
+    std::swap(was_recorded_, other.was_recorded_);
+    std::swap(device_index_, other.device_index_);
+    std::swap(event_, other.event_);
+  }
 };
 
 }  // namespace distributed
