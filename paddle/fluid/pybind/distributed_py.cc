@@ -48,8 +48,7 @@ void BindDistributed(py::module *m) {
 
   py::class_<distributed::AllreduceOptions>(*m, "AllreduceOptions")
       .def(py::init<>())
-      .def_readwrite("reduceOp", &distributed::AllreduceOptions::reduceOp)
-      .def_readwrite("timeout", &distributed::AllreduceOptions::timeout);
+      .def_readwrite("reduce_op", &distributed::AllreduceOptions::reduce_op);
 
   auto ProcessGroup =
       py::class_<distributed::ProcessGroup,
@@ -62,7 +61,7 @@ void BindDistributed(py::module *m) {
                   distributed::ReduceOp op) {
                  auto tensor = CastPyArg2Tensor(py_tensor.ptr(), 0);
                  distributed::AllreduceOptions opts;
-                 opts.reduceOp = op;
+                 opts.reduce_op = op;
                  std::vector<Tensor> tensors = {tensor};
                  return self.AllReduce(tensors, opts);
                },
@@ -81,22 +80,20 @@ void BindDistributed(py::module *m) {
                py::arg("tensor"), py::arg("source_rank"),
                py::call_guard<py::gil_scoped_release>());
 
-  auto ProcessGroupNCCL =
-      py::class_<distributed::ProcessGroupNCCL,
-                 std::shared_ptr<distributed::ProcessGroupNCCL>>(
-          *m, "ProcessGroupNCCL", ProcessGroup)
-          .def(py::init<const distributed::ProcessGroupStrategy &, int, int>(),
-               py::call_guard<py::gil_scoped_release>());
+  py::class_<distributed::ProcessGroupNCCL,
+             std::shared_ptr<distributed::ProcessGroupNCCL>>(
+      *m, "ProcessGroupNCCL", ProcessGroup)
+      .def(py::init<const distributed::ProcessGroupStrategy &, int, int>(),
+           py::call_guard<py::gil_scoped_release>());
 
-  auto Task =
-      py::class_<distributed::ProcessGroup::Task,
-                 std::shared_ptr<distributed::ProcessGroup::Task>>(*m, "work")
-          .def("is_completed", &distributed::ProcessGroup::Task::IsCompleted)
-          .def("wait", &distributed::ProcessGroup::Task::Wait,
-               py::arg("timeout") = kWaitTimeout,
-               py::call_guard<py::gil_scoped_release>())
-          .def("synchronize", &distributed::ProcessGroup::Task::Synchronize,
-               py::call_guard<py::gil_scoped_release>());
+  py::class_<distributed::ProcessGroup::Task,
+             std::shared_ptr<distributed::ProcessGroup::Task>>(*m, "work")
+      .def("is_completed", &distributed::ProcessGroup::Task::IsCompleted)
+      .def("wait", &distributed::ProcessGroup::Task::Wait,
+           py::arg("timeout") = kWaitTimeout,
+           py::call_guard<py::gil_scoped_release>())
+      .def("synchronize", &distributed::ProcessGroup::Task::Synchronize,
+           py::call_guard<py::gil_scoped_release>());
 
   // define parallel strategy, it will be removed
   py::class_<distributed::ProcessGroupStrategy> pg_strategy(

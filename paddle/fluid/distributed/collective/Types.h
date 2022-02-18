@@ -19,13 +19,12 @@
 
 namespace paddle {
 namespace distributed {
-constexpr auto kUnsetTimeout = std::chrono::milliseconds(-1);
 
+// TODO(shenliang03): To support AVG for reduce
 enum class ReduceOp : std::uint8_t { SUM = 0, AVG, MAX, MIN, PRODUCT };
 
 struct AllreduceOptions {
-  ReduceOp reduceOp = ReduceOp::SUM;
-  std::chrono::milliseconds timeout = kUnsetTimeout;
+  ReduceOp reduce_op = ReduceOp::SUM;
 };
 
 struct BroadcastOptions {

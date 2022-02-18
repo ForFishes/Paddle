@@ -27,18 +27,16 @@
 #include "paddle/fluid/platform/enforce.h"
 
 constexpr auto kWaitTimeout = std::chrono::milliseconds(0);
-constexpr auto kProcessGroupDefaultTimeout =
-    std::chrono::milliseconds(30 * 60 * 1000);
 
 namespace paddle {
 namespace distributed {
 
 using Tensor = paddle::experimental::Tensor;
 
-enum class OpType : std::uint8_t {
+enum class CommType : std::uint8_t {
   BROADCAST = 0,
   ALLREDUCE = 1,
-  ALLREDUCE_SPARSE = 2,
+  ALLREDUCE_SPARSE = 2,  // TODO(shenliang03): to support sparse in allreduce
   REDUCE = 3,
   ALLGATHER = 4,
   GATHER = 5,
@@ -64,7 +62,7 @@ class ProcessGroup {
   class Task {
    public:
     Task(int rank, const std::vector<Tensor>& inputTensors,
-         OpType opType = OpType::UNKNOWN);
+         CommType opType = CommType::UNKNOWN);
 
     virtual ~Task();
     virtual bool IsCompleted();
@@ -73,7 +71,7 @@ class ProcessGroup {
 
    protected:
     const int rank_;
-    OpType opType_;
+    CommType comm_type_;
     std::mutex mutex_;
     bool is_completed_ = false;
   };

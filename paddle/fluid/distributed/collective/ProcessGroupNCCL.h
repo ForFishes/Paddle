@@ -46,7 +46,7 @@ class ProcessGroupNCCL : public ProcessGroup {
   class NCCLTask : public ProcessGroup::Task,
                    public std::enable_shared_from_this<NCCLTask> {
    public:
-    NCCLTask(const std::vector<Place>& places, int rank, OpType OpType,
+    NCCLTask(const std::vector<Place>& places, int rank, CommType CommType,
              const std::vector<Tensor>& inputs);
 
     bool IsCompleted();
@@ -65,7 +65,6 @@ class ProcessGroupNCCL : public ProcessGroup {
 
    protected:
     std::vector<Place> places_;
-    std::chrono::time_point<std::chrono::steady_clock> start_time_;
     std::vector<std::shared_ptr<NCCLCommManager>> ncclComms_;
     std::shared_ptr<std::vector<Tensor>> outputs_;
 
@@ -88,7 +87,7 @@ class ProcessGroupNCCL : public ProcessGroup {
 
  protected:
   virtual std::shared_ptr<ProcessGroupNCCL::NCCLTask> CreateTask(
-      std::vector<Place> places, int rank, OpType opType,
+      std::vector<Place> places, int rank, CommType opType,
       const std::vector<Tensor>& inputs);
 
  protected:
@@ -114,10 +113,10 @@ class ProcessGroupNCCL : public ProcessGroup {
   std::shared_ptr<ProcessGroup::Task> Collective(
       std::vector<Tensor>& inputs,   // NOLINT
       std::vector<Tensor>& outputs,  // NOLINT
-      Fn fn, OpType op_type);
+      Fn fn, CommType op_type);
 
-  std::vector<std::shared_ptr<NCCLCommManager>>& GetNCCLComm(
-      const std::string& places_key, const std::vector<Place>& places);
+  void CreateNCCLManagerCache(const std::string& places_key,
+                              const std::vector<Place>& places);
 };
 
 }  //  namespace distributed

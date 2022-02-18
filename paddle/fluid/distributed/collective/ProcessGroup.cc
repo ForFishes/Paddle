@@ -18,8 +18,8 @@ namespace paddle {
 namespace distributed {
 
 ProcessGroup::Task::Task(int rank, const std::vector<Tensor>& inputTensors,
-                         OpType opType)
-    : rank_(rank), opType_(opType) {}
+                         CommType comm_type)
+    : rank_(rank), comm_type_(comm_type) {}
 
 ProcessGroup::Task::~Task() = default;
 
