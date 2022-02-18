@@ -54,7 +54,6 @@ void BindDistributed(py::module *m) {
   auto ProcessGroup =
       py::class_<distributed::ProcessGroup,
                  std::shared_ptr<distributed::ProcessGroup>>(*m, "ProcessGroup")
-          // .def(py::init<int, int>())
           .def("rank", &distributed::ProcessGroup::GetRank)
           .def("size", &distributed::ProcessGroup::GetSize)
           .def("name", &distributed::ProcessGroup::GetBackendName)
@@ -69,6 +68,7 @@ void BindDistributed(py::module *m) {
                },
                py::arg("tensor"), py::arg("op") = distributed::ReduceOp::SUM,
                py::call_guard<py::gil_scoped_release>())
+
           .def("broadcast",
                [](distributed::ProcessGroup &self, py::handle py_tensor,
                   int source_rank) {
@@ -91,7 +91,6 @@ void BindDistributed(py::module *m) {
   auto Task =
       py::class_<distributed::ProcessGroup::Task,
                  std::shared_ptr<distributed::ProcessGroup::Task>>(*m, "work")
-          // .def(py::init<>())
           .def("is_completed", &distributed::ProcessGroup::Task::IsCompleted)
           .def("wait", &distributed::ProcessGroup::Task::Wait,
                py::arg("timeout") = kWaitTimeout,
