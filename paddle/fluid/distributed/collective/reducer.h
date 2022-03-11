@@ -58,6 +58,8 @@ class EagerGroup {
   // external message of group
   phi::DataType dtype_;
 
+  std::shared_ptr<ProcessGroup::Task> task;
+
   friend std::ostream &operator<<(std::ostream &, const EagerGroup &);
 };
 
@@ -89,6 +91,8 @@ class EagerReducer {
   void MarkVarReady(const size_t var_index, const bool is_used_var);
   void MarkGroupReady(const size_t group_index);
   void FusedAllReduceSchedule(EagerGroup *group, const int curr_group_index);
+  void FinalizeBackward();
+  void TraverseBackwardGraph(const std::vector<Tensor> &outputs);
 
  private:
   std::vector<Tensor> tensors_;
@@ -96,7 +100,7 @@ class EagerReducer {
   std::vector<bool> is_sparse_gradient_;
   std::shared_ptr<distributed::ProcessGroup> process_group_;
   std::vector<size_t> group_size_limits_;
-  bool find_unused_vars_each_step_;
+  // bool find_unused_vars_each_step_;
 
   std::vector<EagerGroup> groups_;
   std::vector<TensorLocator> variable_locators_;
@@ -108,6 +112,16 @@ class EagerReducer {
 
   std::vector<bool> vars_marked_ready_;
   std::vector<int> local_used_vars_;
+
+  // Following variables are to help unused vars
+  // std::unordered_map<GradOpNode*, size_t> node_deps_;
+  // std::unordered_map<VariableWrapper*, size_t> var_index_map_;
+  std::vector<size_t> unused_vars_;
+  std::map<egr::GradNodeBase *, size_t> gradnode_index_map_;
+  bool has_marked_unused_vars_{false};
+  bool find_unused_vars_each_step_{false};
+  bool find_unused_vars_once_{true};
+  bool groups_need_finalize_{false};
 };
 
 }  //  namespace distributed

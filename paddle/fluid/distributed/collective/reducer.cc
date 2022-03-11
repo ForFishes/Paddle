@@ -164,6 +164,8 @@ EagerReducer::EagerReducer(
         std::dynamic_pointer_cast<egr::GradNodeAccumulation>(grad_node);
     accumulation_grad_node->RegisterReduceHook(
         std::make_shared<egr::CppTensorVoidHook>(reduce_hook));
+
+    gradnode_index_map_[grad_node.get()] = global_var_index;
   }
 
   vars_marked_ready_.resize(tensors_.size(), false);
@@ -257,6 +259,53 @@ void EagerReducer::InitializeDenseGroups(
   p_group->all_length_ = all_length;
 }
 
+void EagerReducer::TraverseBackwardGraph(const std::vector<Tensor> &outputs) {
+  std::queue<egr::GradNodeBase *> queue;
+  std::set<egr::GradNodeBase *> visited;
+
+  for (const auto &output : outputs) {
+    auto *auto_grad_meta =
+        static_cast<egr::AutogradMeta *>(output.get_autograd_meta());
+    if (!auto_grad_meta) continue;
+    auto shared_grad_node = auto_grad_meta->GetMutableGradNode();
+    if (shared_grad_node == nullptr || shared_grad_node.get() == nullptr ||
+        auto_grad_meta->StopGradient()) {
+      continue;
+    }
+    egr::GradNodeBase *grad_node = shared_grad_node.get();
+    queue.emplace(grad_node);
+  }
+
+  while (!queue.empty()) {
+    egr::GradNodeBase *node = queue.front();
+    queue.pop();
+    const std::vector<std::vector<egr::Edge>> &edges = node->GetEdges();
+    for (size_t i = 0; i < edges.size(); i++) {
+      for (size_t j = 0; j < edges[i].size(); j++) {
+        const egr::Edge &edge = edges[i][j];
+        auto next_node_shared = edge.GetMutableGradNode();
+        if (!next_node_shared || !next_node_shared.get()) {
+          continue;
+        }
+        auto *next_node = next_node_shared.get();
+        const bool was_inserted = visited.insert(next_node).second;
+        if (was_inserted) {
+          queue.emplace(next_node);
+        }
+      }
+    }
+  }
+
+  for (const auto &it : gradnode_index_map_) {
+    if (visited.count(it.first) == 0) {
+      unused_vars_.push_back(it.second);
+      VLOG(0) << "[Rank " << process_group_->GetRank() << "]: "
+              << "Tensor " << tensors_[it.second].name() << " at index "
+              << it.second << " is marked as unused.";
+    }
+  }
+}
+
 void EagerReducer::PrepareForBackward(const std::vector<Tensor> &outputs) {
   VLOG(3) << "after forward, then reset count for backward.";
   grad_need_hooks_ = true;
@@ -268,6 +317,35 @@ void EagerReducer::PrepareForBackward(const std::vector<Tensor> &outputs) {
   // reinitialize vars_marked_ready_ for next iteration
   vars_marked_ready_.clear();
   vars_marked_ready_.resize(tensors_.size(), false);
+
+  // The first var to trigger the unused parameter
+  has_marked_unused_vars_ = false;
+
+  if (find_unused_vars_once_ || find_unused_vars_each_step_) {
+    // unused_vars_.clear();
+    TraverseBackwardGraph(outputs);
+    // only check once in first step
+    find_unused_vars_once_ = false;
+  }
+
+  if (find_unused_vars_each_step_ && unused_vars_.empty()) {
+    LOG_FIRST_N(WARNING, 1)
+        << "All parameters are involved in the backward pass. "
+           "It is recommended to set find_unused_parameters to False "
+           "to improve performance. However, if unused parameters "
+           "appear in subsequent iterative training, then an error "
+           "will occur. Please make it clear that in the subsequent "
+           "training, there will be no parameters that are not used "
+           "in the backward pass, and then set find_unused_parameters";
+  }
+
+  if (unused_vars_.size() == tensors_.size()) {
+    LOG_FIRST_N(WARNING, 1)
+        << "There is no parameter in the device involved "
+           "in the backward calculation. If there are "
+           "parameters on other devices involved in the "
+           "backward, then a serious error will occur here.";
+  }
 }
 
 void EagerReducer::AddDistHook(size_t var_index) {
@@ -290,11 +368,52 @@ void EagerReducer::AddDistHook(size_t var_index) {
 
   local_used_vars_[var_index] = 1;
 
+  if (!has_marked_unused_vars_) {
+    has_marked_unused_vars_ = true;
+    for (const auto unused_index : unused_vars_) {
+      MarkVarReady(unused_index, false);
+    }
+  }
+
   MarkVarReady(var_index, true);
 }
 
 void EagerReducer::MarkVarReady(const size_t var_index,
                                 const bool is_used_var) {
+  // error happened, if the var is ready before.
+  if (vars_marked_ready_[var_index]) {
+    auto error_info = string::Sprintf(
+        "Error happened, when parameter[%d][%s] has been ready before. "
+        "Please set find_unused_parameters=True to traverse backward graph "
+        "in each step to prepare reduce in advance. If you have set, "
+        "there may be several reasons for this error: "
+        "1) In multiple reentrant backward phase, some parameters are reused."
+        "2) Using model parameters outside of forward function. Please "
+        "make sure that model parameters are not shared in concurrent "
+        "forward-backward passes.",
+        var_index, tensors_[var_index].name());
+
+    PADDLE_ENFORCE_EQ(has_marked_unused_vars_, false,
+                      platform::errors::PreconditionNotMet(error_info));
+
+    error_info +=
+        "3) Unused parameters retrieval is incorrect. "
+        "The return value of forward will be used to retrieve"
+        " the unused parameters of the entire model. These "
+        "gradients of unused parameters will not be synchronized "
+        "between multiple cards. However, if the unused "
+        "parameters participate in the backward calculation "
+        "again at a later time (e.g. after the forward function, "
+        "the loss calculation uses the unused "
+        "paramters of the forward and trigger backward), "
+        "its gradient will be wrong.";
+
+    PADDLE_ENFORCE_EQ(has_marked_unused_vars_, true,
+                      platform::errors::PreconditionNotMet(error_info));
+  } else {
+    vars_marked_ready_[var_index] = true;
+  }
+
   const auto &var_locator = variable_locators_[var_index];
   const auto group_index = var_locator.group_index;
   const auto inside_group_index = var_locator.inside_group_index;
@@ -304,11 +423,14 @@ void EagerReducer::MarkVarReady(const size_t var_index,
   auto &grad_tensor = static_cast<egr::AutogradMeta *>(autograd_meta)->Grad();
 
   group.dense_tensors_[inside_group_index] = grad_tensor;
-  vars_marked_ready_[var_index] = true;
 
   if (--group.pending_ == 0) {
     // can start allreduce
     MarkGroupReady(group_index);
+  }
+
+  if (next_group_ == groups_.size()) {
+    FinalizeBackward();
   }
 }
 
@@ -371,12 +493,13 @@ void EagerReducer::FusedAllReduceSchedule(EagerGroup *group,
   }
 
   // div nranks
-  double scaling = 1.0 / nranks_;
-  paddle::experimental::scale_(group->tensor_, scaling, 0.0, false);
+  // double scaling = 1.0 / nranks_;
+  paddle::experimental::scale_(group->tensor_, 1.0 / nranks_, 0.0, false);
 
   // allreduce
   std::vector<Tensor> reduce_tensors = {group->tensor_};
-  process_group_->AllReduce(reduce_tensors, opts)->Synchronize();
+
+  group->task = process_group_->AllReduce(reduce_tensors, opts);
 
   // split tensors
   if (group->dense_tensors_.size() == 1) {
@@ -391,6 +514,17 @@ void EagerReducer::FusedAllReduceSchedule(EagerGroup *group,
     }
     split_tensors_.clear();
   }
+}
+
+void EagerReducer::FinalizeBackward() {
+  groups_need_finalize_ = false;
+  grad_need_hooks_ = false;
+
+  for (auto &group : groups_) {
+    group.task->Synchronize();
+  }
+
+  VLOG(3) << "In the batch, Reducer is finished.";
 }
 
 std::ostream &operator<<(std::ostream &out, const EagerGroup &group) {
