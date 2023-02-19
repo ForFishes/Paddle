@@ -111,9 +111,6 @@ class GemmEpilogueAlgoCache {
         0,
         platform::errors::Unavailable("No GEMM epilogue algorithm support!"));
 
-    LOG(INFO) << "Request: " << requested_algo_count_
-              << " Response: " << returned_results;
-
     PADDLE_ENFORCE_GPU_SUCCESS(
         platform::dynload::cublasLtMatmulPreferenceDestroy(preference));
 
@@ -222,7 +219,7 @@ class GemmEpilogueAlgoCache {
   }
   std::unordered_map<int64_t, cublasLtMatmulAlgo_t> map_;
   int search_times_;
-  const int requested_algo_count_ = 10000;
+  const int requested_algo_count_ = 10;
   std::mutex cache_mutex_;
 
   void HashMatmulDesc_(cublasLtMatmulDesc_t desc,

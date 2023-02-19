@@ -74,18 +74,6 @@ void TaskNode::Init(bool use_feed_fetch_ops) {
     VLOG(3) << "TaskNode will be inited without feed and fetch ops";
   }
   if (ops_.empty()) {
-    {
-      std::string ret;
-      program_->Proto()->SerializeToString(&ret);
-
-      std::string filename =
-          "infer_program_debug_" + std::to_string(rank_) + ".pb";
-      FILE* file = fopen(filename.c_str(), "wb");
-      fwrite(ret.data(), 1, ret.size(), file);
-      fclose(file);
-      LOG(INFO) << "------------------- Dump infer program: " << filename;
-    }
-
     // Q (for fleet executor dev): should we need another reset funct?
     VLOG(3) << "Task node will be inited by calling Init().";
     for (const auto& op_desc : program_->Block(0).AllOps()) {

@@ -829,10 +829,6 @@ PADDLE_DEFINE_EXPORTED_bool(
     false,
     "It controls whether to apply IR pass to program when using Fleet APIs");
 
-PADDLE_DEFINE_EXPORTED_int32(matmul_split_strategy, 0, "");
-
-PADDLE_DEFINE_EXPORTED_int32(cublaslt_algo_id, -1, "");
-
 PADDLE_DEFINE_EXPORTED_bool(enable_nvtx, false, "");
 
 /**

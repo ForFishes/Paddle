@@ -18,31 +18,7 @@ limitations under the License. */
 #include "paddle/phi/kernels/funcs/blas/blas.h"
 #include "paddle/phi/kernels/funcs/complex_functors.h"
 
-DECLARE_int32(matmul_split_strategy);
-
 namespace phi {
-
-#ifdef PADDLE_WITH_CUDA
-template <typename T>
-void ColumnParallelMatmul(const GPUContext& ctx,
-                          const T* x,
-                          const T* y,
-                          T* z,
-                          int m,
-                          int n,
-                          int k,
-                          int parallel_num);
-
-template <typename T>
-void RowParallelMatmul(const GPUContext& ctx,
-                       const T* x_,
-                       const T* y_,
-                       DenseTensor* z_,
-                       int m,
-                       int n,
-                       int k,
-                       int parallel_num);
-#endif
 
 static void GetBroadcastFromDims(const int x_ndim,
                                  const std::int64_t* x_dims,
@@ -120,36 +96,6 @@ void MatMulFunction(const Context& dev_ctx,
                     bool flag = false) {
   const int x_ndim = x_dims.size();
   const int y_ndim = y_dims.size();
-
-#ifdef PADDLE_WITH_CUDA
-  if (std::is_same<Context, phi::GPUContext>::value) {
-    auto& gpu_ctx = *reinterpret_cast<const phi::GPUContext*>(
-        static_cast<const void*>(&dev_ctx));
-    if (!trans_x && !trans_y && x_ndim == 2 && y_ndim == 2) {
-      LOG_FIRST_N(WARNING, 1)
-          << "FLAGS_matmul_split_strategy = " << FLAGS_matmul_split_strategy;
-      if (FLAGS_matmul_split_strategy > 1) {
-        return ColumnParallelMatmul<T>(gpu_ctx,
-                                       X.data<T>(),
-                                       Y.data<T>(),
-                                       gpu_ctx.template Alloc<T>(Out),
-                                       x_dims[0],
-                                       x_dims[1],
-                                       y_dims[1],
-                                       FLAGS_matmul_split_strategy);
-      } else if (FLAGS_matmul_split_strategy < -1) {
-        return RowParallelMatmul<T>(gpu_ctx,
-                                    X.data<T>(),
-                                    Y.data<T>(),
-                                    Out,
-                                    x_dims[0],
-                                    x_dims[1],
-                                    y_dims[1],
-                                    -FLAGS_matmul_split_strategy);
-      }
-    }
-  }
-#endif
 
   // Get data ptr
   const T* x_data = X.data<T>();
