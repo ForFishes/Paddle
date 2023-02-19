@@ -21,6 +21,8 @@ limitations under the License. */
 #include "paddle/fluid/platform/dynload/cublasLt.h"
 #include "paddle/fluid/platform/float16.h"
 
+DECLARE_int32(cublaslt_algo_id);
+
 namespace paddle {
 namespace operators {
 
@@ -70,6 +72,49 @@ class FusedGemmEpilogueKernel : public framework::OpKernel<T> {
       scale_type = CUDA_R_64F;
       compute_type = CUBLAS_COMPUTE_64F;
     }
+
+    cublasLtMatmulAlgo_t zjl_algo;
+    if (FLAGS_cublaslt_algo_id >= 0) {
+      auto lt_handle = dev_ctx.cublaslt_handle();
+      std::vector<int> algo_ids(10000);
+      int algo_id_cnt;
+      PADDLE_ENFORCE_GPU_SUCCESS(phi::dynload::cublasLtMatmulAlgoGetIds(
+          lt_handle,
+          compute_type,
+          scale_type,
+          mat_type,
+          mat_type,
+          mat_type,
+          mat_type,
+          static_cast<int>(algo_ids.size()),
+          algo_ids.data(),
+          &algo_id_cnt));
+      LOG_FIRST_N(WARNING, 1) << "algo id cnt: " << algo_id_cnt;
+      PADDLE_ENFORCE_LT(FLAGS_cublaslt_algo_id, algo_id_cnt);
+      PADDLE_ENFORCE_GPU_SUCCESS(
+          phi::dynload::cublasLtMatmulAlgoInit(lt_handle,
+                                               compute_type,
+                                               scale_type,
+                                               mat_type,
+                                               mat_type,
+                                               mat_type,
+                                               mat_type,
+                                               algo_ids[FLAGS_cublaslt_algo_id],
+                                               &zjl_algo));
+    }
+
+    /*
+    cublasStatus_t cublasLtMatmulAlgoInit(
+          cublasLtHandle_t lightHandle,
+          cublasComputeType_t computeType,
+          cudaDataType_t scaleType,
+          cudaDataType_t Atype,
+          cudaDataType_t Btype,
+          cudaDataType_t Ctype,
+          cudaDataType_t Dtype,
+          int algoId,
+          cublasLtMatmulAlgo_t *algo);
+    */
 
     cublasLtMatmulDesc_t operation_desc = NULL;
     PADDLE_ENFORCE_GPU_SUCCESS(platform::dynload::cublasLtMatmulDescCreate(
@@ -156,7 +201,7 @@ class FusedGemmEpilogueKernel : public framework::OpKernel<T> {
     cublasLtHandle_t lt_handle = dev_ctx.cublaslt_handle();
     // NOTE(zengjinle): I do not know whether the 4MB workspace size is
     // "enough". I just followed the settings from the NVIDIA MLPerf BERT code.
-    size_t workspace_size = static_cast<size_t>(4) * 1024 * 1024;
+    size_t workspace_size = static_cast<size_t>(4) * 1024 * 1024 * 1024;
     cudaStream_t stream = dev_ctx.stream();
     memory::allocation::AllocationPtr workspace = memory::Alloc(
         dev_ctx.GetPlace(),
@@ -373,7 +418,7 @@ class FusedGemmEpilogueGradKernel : public framework::OpKernel<T> {
     cublasLtHandle_t lt_handle = dev_ctx.cublaslt_handle();
     // NOTE(zengjinle): I do not know whether the 4MB workspace size is
     // "enough". I just followed the settings from the NVIDIA MLPerf BERT code.
-    size_t workspace_size = static_cast<size_t>(4) * 1024 * 1024;
+    size_t workspace_size = static_cast<size_t>(4) * 1024 * 1024 * 1024;
     const cublasLtMatmulAlgo_t* algo = nullptr;
     cudaStream_t stream = dev_ctx.stream();
 

@@ -25,6 +25,7 @@ limitations under the License. */
 #include "paddle/fluid/framework/op_call_stack.h"
 #include "paddle/fluid/framework/phi_utils.h"
 #include "paddle/fluid/framework/raw_tensor.h"
+#include "paddle/fluid/framework/scope_utils.h"
 #include "paddle/fluid/framework/shape_inference.h"
 #include "paddle/fluid/framework/transfer_scope_cache.h"
 #include "paddle/fluid/framework/unused_var_check.h"
@@ -41,6 +42,7 @@ limitations under the License. */
 #include "paddle/phi/core/ddim.h"
 #include "paddle/phi/core/kernel_context.h"
 #include "paddle/phi/core/kernel_factory.h"
+#include "paddle/phi/nvtx_guard.h"
 #include "paddle/phi/ops/compat/signatures.h"
 
 namespace phi {
@@ -215,6 +217,9 @@ RuntimeContext::RuntimeContext(const VariableNameMap& innames,
 }
 
 void OperatorBase::Run(const Scope& scope, const platform::Place& place) {
+  VLOG(4) << "MemInfo before run " << Type() << " : "
+          << GetAllScopeMemSize(scope);
+  phi::NVTXGuard nvtx_guard(Type());
   try {
     VLOG(4) << place << " " << DebugStringEx(&scope);
     if (platform::is_gpu_place(place)) {
@@ -297,6 +302,9 @@ void OperatorBase::Run(const Scope& scope, const platform::Place& place) {
     LOG(WARNING) << Type() << " raises an unknown exception";
     std::rethrow_exception(std::current_exception());
   }
+
+  VLOG(3) << "MemInfo after run " << Type() << " : "
+          << GetAllScopeMemSize(scope);
 }
 
 bool OperatorBase::HasInputs(const std::string& name) const {
