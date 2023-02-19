@@ -399,8 +399,6 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
   void ShareTensor(phi::DenseTensor *x, phi::DenseTensor *y) {
     PADDLE_ENFORCE_LE(x->numel(), max_size_);
     const void *y_ptr = y->data();
-    PADDLE_ENFORCE_LE(x->numel() * phi::SizeOf(x->dtype()),
-                      y->numel() * phi::SizeOf(y->dtype()));
     y->Resize(x->dims());
     auto *new_y_ptr = ctx_->Alloc(y, x->dtype());
     PADDLE_ENFORCE_EQ(y_ptr, new_y_ptr);

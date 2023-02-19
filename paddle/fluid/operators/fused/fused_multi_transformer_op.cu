@@ -28,6 +28,19 @@ static CustomNCCLComm *GetCustomNCCLComm(const phi::GPUContext &ctx,
   return comm.get();
 }
 
+phi::DenseTensor CustomAllReduce(const phi::DenseTensor &t) {
+  auto *ctx = static_cast<phi::GPUContext *>(
+      platform::DeviceContextPool::Instance().Get(t.place()));
+  auto comm = GetCustomNCCLComm(*ctx, 0);
+  PADDLE_ENFORCE_NOT_NULL(comm);
+  phi::DenseTensor ret;
+  ret.Resize(t.dims());
+  ctx->Alloc(&ret, t.dtype());
+  comm->SwapInput(&ret);
+  phi::Copy(*ctx, t, t.place(), false, &ret);
+  return comm->AllReduce();
+}
+
 template <typename T>
 class FusedMultiTransformerOpKernel : public framework::OpKernel<T> {
  public:
