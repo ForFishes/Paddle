@@ -19,8 +19,6 @@ PADDLE_DEFINE_EXPORTED_int64(custom_allreduce_threshold, 196608, "");
 namespace paddle {
 namespace operators {
 
-#if CUDA_VERSION >= 11060  // Use cublasLt to fuse FFN operation.
-
 static CustomNCCLComm *GetCustomNCCLComm(const phi::GPUContext &ctx,
                                          int ring_id) {
   static auto comm =
@@ -40,6 +38,8 @@ phi::DenseTensor CustomAllReduce(const phi::DenseTensor &t) {
   phi::Copy(*ctx, t, t.place(), false, &ret);
   return comm->AllReduce();
 }
+
+#if CUDA_VERSION >= 11060  // Use cublasLt to fuse FFN operation.
 
 template <typename T>
 class FusedMultiTransformerOpKernel : public framework::OpKernel<T> {

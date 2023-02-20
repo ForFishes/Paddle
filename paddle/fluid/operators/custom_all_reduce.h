@@ -124,25 +124,57 @@ static __global__ void OneShotAllReduceKernel(
 
   size_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * VecSize;
   size_t stride = (blockDim.x * gridDim.x) * VecSize;
-  size_t limit = n - VecSize;
-
+  // size_t limit = n - VecSize;
   using AlignedVec = phi::AlignedVector<T, VecSize>;
-  while (idx + VecSize <= n) {
-    AlignedVec in_vecs[N];
+  const int tid = threadIdx.y;
 
-#pragma unroll
+  while (idx + VecSize <= n) {
+    // extern __shared__ T in_vecs[N * VecSize];
+    // const auto *ptr = ins[tid] + idx;
+    // #pragma unroll
+    // for(int i =0;i< VecSize){
+    //   in_vecs[tid * VecSize + i] = ptr[i];
+    // }
+
+    // // phi::Load(ptr, &in_vecs[tid]);
+    // __syncthreads();
+
+    AlignedVec in_vecs[N];
+    #pragma unroll
     for (int i = 0; i < N; ++i) {
       auto cur_rank = (i + rank) % N;
       const auto *ptr = ins[cur_rank] + idx;
       phi::Load(ptr, &in_vecs[cur_rank]);
     }
+    __syncthreads();
 
-#pragma unroll
-    for (int i = 1; i < N; ++i) {
-      AlignedVectorAddHelper<T, VecSize>::Run(in_vecs[i], &in_vecs[0]);
+    for(int s=blockDim.y/2;s > 0; s >>=1){
+      if(tid < s){
+        AlignedVectorAddHelper<T, VecSize>::Run(in_vecs[tid + s], &in_vecs[tid]);
+      }
+      __syncthreads();
     }
-    phi::Store(in_vecs[0], out + idx);
+    if(tid == 0){
+      phi::Store(in_vecs[0], out + idx);
+    }
     idx += stride;
+
+
+// // #pragma unroll
+//     for (int i = 0; i < N; ++i) {
+//       auto cur_rank = (i + rank) % N;
+//       const auto *ptr = ins[cur_rank] + idx;
+//       phi::Load(ptr, &in_vecs[cur_rank]);
+//     }
+
+// // #pragma unroll
+//     for (int i = 1; i < N; ++i) {
+//       AlignedVectorAddHelper<T, VecSize>::Run(in_vecs[i], &in_vecs[0]);
+//     }
+//     phi::Store(in_vecs[0], out + idx);
+//     idx += stride;
+
+
   }
 
   while (idx < n) {
@@ -163,18 +195,18 @@ class CustomNCCLComm {
 
   virtual ~CustomNCCLComm() = default;
 
- protected:
-  void EnableP2P(int nranks) {
-    for (int i = 0; i < nranks; ++i) {
-      platform::CUDADeviceGuard guard(i);
-      for (int j = 0; j < nranks; ++j) {
-        int enabled = 0;
-        PADDLE_ENFORCE_GPU_SUCCESS(cudaDeviceCanAccessPeer(&enabled, i, j));
-        PADDLE_ENFORCE_EQ(enabled, 1);
-        PADDLE_ENFORCE_GPU_SUCCESS(cudaDeviceEnablePeerAccess(j, 0));
-      }
-    }
-  }
+//  protected:
+//   void EnableP2P(int nranks) {
+//     for (int i = 0; i < nranks; ++i) {
+//       platform::CUDADeviceGuard guard(i);
+//       for (int j = 0; j < nranks; ++j) {
+//         int enabled = 0;
+//         PADDLE_ENFORCE_GPU_SUCCESS(cudaDeviceCanAccessPeer(&enabled, i, j));
+//         PADDLE_ENFORCE_EQ(enabled, 1);
+//         PADDLE_ENFORCE_GPU_SUCCESS(cudaDeviceEnablePeerAccess(j, 0));
+//       }
+//     }
+//   }
 };
 
 template <int N>
@@ -382,18 +414,40 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
     ++barrier_value_;
 
     int64_t numel = out_.numel();
-    int threads = ctx_->GetMaxThreadsPerBlock();
+
+    // int max_threads_per_block = context.GetMaxThreadsPerBlock();  // 1024
+    int block_y = N;
+    int block_x = ctx_->GetMaxThreadsPerBlock() / block_y;
+    int threads = block_x;
     PADDLE_ENFORCE_GE(threads, N);
+
     int64_t blocks = ((numel + VecSize - 1) / VecSize + threads - 1) / threads;
     blocks = std::min<int64_t>(blocks, ctx_->GetCUDAMaxGridDimSize()[0]);
+    const dim3 block_size(block_x, block_y);
+    const dim3 grid_size(blocks);
     OneShotAllReduceKernel<T, BarrierDType, N, VecSize>
-        <<<blocks, threads, 0, ctx_->stream()>>>(in_ptrs,
+        <<<grid_size, block_size, 0, ctx_->stream()>>>(in_ptrs,
                                                  barrier_ptrs,
                                                  barrier_value_,
                                                  rank_,
                                                  out_.numel(),
                                                  out_data);
     return std::move(out_);
+
+
+
+    // int threads = ctx_->GetMaxThreadsPerBlock();
+    // PADDLE_ENFORCE_GE(threads, N);
+    // int64_t blocks = ((numel + VecSize - 1) / VecSize + threads - 1) / threads;
+    // blocks = std::min<int64_t>(blocks, ctx_->GetCUDAMaxGridDimSize()[0]);
+    // OneShotAllReduceKernel<T, BarrierDType, N, VecSize>
+    //     <<<blocks, threads, 0, ctx_->stream()>>>(in_ptrs,
+    //                                              barrier_ptrs,
+    //                                              barrier_value_,
+    //                                              rank_,
+    //                                              out_.numel(),
+    //                                              out_data);
+    // return std::move(out_);
   }
 
   void ShareTensor(phi::DenseTensor *x, phi::DenseTensor *y) {
