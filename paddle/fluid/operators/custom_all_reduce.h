@@ -124,57 +124,24 @@ static __global__ void OneShotAllReduceKernel(
 
   size_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * VecSize;
   size_t stride = (blockDim.x * gridDim.x) * VecSize;
-  // size_t limit = n - VecSize;
   using AlignedVec = phi::AlignedVector<T, VecSize>;
-  const int tid = threadIdx.y;
-
+  const int x_id = threadIdx.x;
+  const int y_id = threadIdx.y;
+  __shared__ AlignedVec in_vecs[128][N];
   while (idx + VecSize <= n) {
-    // extern __shared__ T in_vecs[N * VecSize];
-    // const auto *ptr = ins[tid] + idx;
-    // #pragma unroll
-    // for(int i =0;i< VecSize){
-    //   in_vecs[tid * VecSize + i] = ptr[i];
-    // }
-
-    // // phi::Load(ptr, &in_vecs[tid]);
-    // __syncthreads();
-
-    AlignedVec in_vecs[N];
-    #pragma unroll
-    for (int i = 0; i < N; ++i) {
-      auto cur_rank = (i + rank) % N;
-      const auto *ptr = ins[cur_rank] + idx;
-      phi::Load(ptr, &in_vecs[cur_rank]);
-    }
+    const auto *ptr = ins[y_id] + idx;
+    phi::Load(ptr, &in_vecs[x_id][y_id]);
     __syncthreads();
-
-    for(int s=blockDim.y/2;s > 0; s >>=1){
-      if(tid < s){
-        AlignedVectorAddHelper<T, VecSize>::Run(in_vecs[tid + s], &in_vecs[tid]);
+    for(int s = blockDim.y/2; s > 0; s >>=1){
+      if(y_id < s){
+        AlignedVectorAddHelper<T, VecSize>::Run(in_vecs[x_id][y_id+s], &in_vecs[x_id][y_id]);
       }
       __syncthreads();
     }
-    if(tid == 0){
-      phi::Store(in_vecs[0], out + idx);
+    if(y_id == 0){
+      phi::Store(in_vecs[x_id][0], out + idx);
     }
     idx += stride;
-
-
-// // #pragma unroll
-//     for (int i = 0; i < N; ++i) {
-//       auto cur_rank = (i + rank) % N;
-//       const auto *ptr = ins[cur_rank] + idx;
-//       phi::Load(ptr, &in_vecs[cur_rank]);
-//     }
-
-// // #pragma unroll
-//     for (int i = 1; i < N; ++i) {
-//       AlignedVectorAddHelper<T, VecSize>::Run(in_vecs[i], &in_vecs[0]);
-//     }
-//     phi::Store(in_vecs[0], out + idx);
-//     idx += stride;
-
-
   }
 
   while (idx < n) {
@@ -414,10 +381,11 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
     ++barrier_value_;
 
     int64_t numel = out_.numel();
-
     // int max_threads_per_block = context.GetMaxThreadsPerBlock();  // 1024
     int block_y = N;
-    int block_x = ctx_->GetMaxThreadsPerBlock() / block_y;
+    // int block_x = ctx_->GetMaxThreadsPerBlock() / block_y;
+    // magic thread
+    int block_x = 128;
     int threads = block_x;
     PADDLE_ENFORCE_GE(threads, N);
 
