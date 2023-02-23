@@ -649,7 +649,14 @@ PYBIND11_MODULE(libpaddle, m) {
         return oss.str();
       });
 
-  m.def("custom_all_reduce", &operators::CustomAllReduce);
+  // m.def("custom_all_reduce", &operators::CustomAllReduce);
+
+  m.def("custom_all_reduce", [](py::handle py_tensor) {
+    auto tensor = CastPyArg2Tensor(py_tensor.ptr(), 0);
+    auto dense =
+          std::dynamic_pointer_cast<phi::DenseTensor>(tensor.impl());
+    return operators::CustomAllReduce(*dense);
+  });
 
   m.def("set_num_threads", &platform::SetNumThreads);
 

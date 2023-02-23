@@ -124,7 +124,7 @@ static __global__ void OneShotAllReduceKernel(
 
   size_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * VecSize;
   size_t stride = (blockDim.x * gridDim.x) * VecSize;
-  size_t limit = n - VecSize;
+  // size_t limit = n - VecSize;
 
   using AlignedVec = phi::AlignedVector<T, VecSize>;
   while (idx + VecSize <= n) {
@@ -156,25 +156,78 @@ static __global__ void OneShotAllReduceKernel(
   }
 }
 
+
+
+template <typename T, typename BarrierT, int N, int VecSize>
+static __global__ void TwoShotAllReduceKernel(
+    phi::Array<const T *, N> ins,
+    phi::Array<volatile BarrierT *, N> barriers,
+    BarrierT barrier_value,
+    int rank,
+    int64_t n,
+    int64_t elts_per_rank,
+    int64_t rank_offset,
+    T *out) {
+  BarrierAllGPUs<BarrierT, N>(barriers, barrier_value, rank);
+  size_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * VecSize;
+  size_t stride = (blockDim.x * gridDim.x) * VecSize;
+  using AlignedVec = phi::AlignedVector<T, VecSize>;
+
+  while (idx + VecSize <= elts_per_rank) {
+    AlignedVec in_vecs[N];
+    #pragma unroll
+    for (int i = 0; i < N; ++i) {
+      auto cur_rank = (i + rank) % N;
+      const auto *ptr = ins[cur_rank] + idx + rank_offset;
+      phi::Load(ptr, &in_vecs[cur_rank]);
+    }
+
+    #pragma unroll
+    for (int i = 1; i < N; ++i) {
+      AlignedVectorAddHelper<T, VecSize>::Run(in_vecs[i], &in_vecs[0]);
+    }
+
+    phi::Store(in_vecs[0], out + idx + rank_offset);
+    idx += stride;
+  }
+
+  while (idx < elts_per_rank) {
+    T sum = ins[0][idx + rank_offset];
+#pragma unroll
+    for (int i = 1; i < N; ++i) {
+      sum += ins[i][idx + rank_offset];
+    }
+    out[idx+ rank_offset] = sum;
+    ++idx;
+  }
+
+  BarrierAllGPUs<BarrierT, N>(barriers, barrier_value + 1, rank);
+  // Gather 
+
+  // size_t gather_idx = (threadIdx.x + blockIdx.x * blockDim.x) * VecSize;
+
+  for(){
+    for(int i = 0; i < N; ++i){
+      
+
+    }
+
+  }
+
+
+
+
+
+
+
+}
+
 class CustomNCCLComm {
  public:
   virtual void SwapInput(phi::DenseTensor *x) = 0;
   virtual phi::DenseTensor AllReduce() = 0;
 
   virtual ~CustomNCCLComm() = default;
-
- protected:
-  void EnableP2P(int nranks) {
-    for (int i = 0; i < nranks; ++i) {
-      platform::CUDADeviceGuard guard(i);
-      for (int j = 0; j < nranks; ++j) {
-        int enabled = 0;
-        PADDLE_ENFORCE_GPU_SUCCESS(cudaDeviceCanAccessPeer(&enabled, i, j));
-        PADDLE_ENFORCE_EQ(enabled, 1);
-        PADDLE_ENFORCE_GPU_SUCCESS(cudaDeviceEnablePeerAccess(j, 0));
-      }
-    }
-  }
 };
 
 template <int N>
@@ -375,6 +428,13 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
 
   template <typename T, int VecSize>
   phi::DenseTensor AllReduceImpl() {
+    // int64_t numel = out_.numel();
+    // return OneShotAllreduce<T, VecSize>();
+    return TwoShotAllreduce<T, VecSize>();
+  }
+
+  template <typename T, int VecSize>
+  phi::DenseTensor OneShotAllreduce(){
     const auto &in_ptrs = ins_->template GetPtrs<const T>();
     const auto &barrier_ptrs =
         barriers_->template GetPtrs<volatile BarrierDType>();
@@ -392,6 +452,48 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
                                                  barrier_value_,
                                                  rank_,
                                                  out_.numel(),
+                                                 out_data);
+    return std::move(out_);
+  }
+
+
+  template <typename T, int VecSize>
+  phi::DenseTensor TwoShotAllreduce(){
+    const auto &in_ptrs = ins_->template GetPtrs<const T>();
+    const auto &barrier_ptrs =
+        barriers_->template GetPtrs<volatile BarrierDType>();
+    auto *out_data = out_.template data<T>();
+    ++barrier_value_;
+    int64_t numel = out_.numel();
+    int threads = ctx_->GetMaxThreadsPerBlock();
+    PADDLE_ENFORCE_GE(threads, N);
+
+    int64_t elts_per_rank = numel / N;
+    int64_t rank_offset = rank_ * elts_per_rank;
+
+    if(rank_ == N-1){
+      elts_per_rank = numel - rank_offset;
+    }
+
+    // max(numel - rank_offset)
+    // elts_per_rank = numel - rank_offset
+    // elts_per_rank + rank_offset < numel? elts_per_rank=elts_per_rank: elts_per_rank = numel-rank_offset
+
+    VLOG(0) << " rank: " << rank_
+            << " elts_per_rank " << elts_per_rank
+            << " rank_offset " << rank_offset 
+            << " out_.numel() " << out_.numel();
+            
+    int64_t blocks = ((numel + VecSize - 1) / VecSize + threads - 1) / threads;
+    blocks = std::min<int64_t>(blocks, ctx_->GetCUDAMaxGridDimSize()[0]);
+    TwoShotAllReduceKernel<T, BarrierDType, N, VecSize>
+        <<<blocks, threads, 0, ctx_->stream()>>>(in_ptrs,
+                                                 barrier_ptrs,
+                                                 barrier_value_,
+                                                 rank_,
+                                                 out_.numel(),
+                                                 elts_per_rank,
+                                                 rank_offset,
                                                  out_data);
     return std::move(out_);
   }

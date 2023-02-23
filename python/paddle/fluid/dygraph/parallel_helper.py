@@ -33,9 +33,9 @@ def _is_parallel_ctx_initialized():
 
 def _set_parallel_ctx(ccl_parallel_context):
     global __parallel_ctx__clz__
-    assert (
-        __parallel_ctx__clz__ is None
-    ), "ParallelContext can only be initialized once."
+    # assert (
+    #     __parallel_ctx__clz__ is None
+    # ), "ParallelContext can only be initialized once."
     __parallel_ctx__clz__ = ccl_parallel_context
 
 
