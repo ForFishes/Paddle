@@ -98,34 +98,31 @@ struct AlignedVectorAddHelper {
   }
 };
 
-template <>
-struct AlignedVectorAddHelper<phi::dtype::float16, 8> {
-  DEVICE static void Run(const phi::AlignedVector<phi::dtype::float16, 8> &in,
-                         phi::AlignedVector<phi::dtype::float16, 8> *out) {
+template <int N>
+struct AlignedVectorAddHelper<phi::dtype::float16, N> {
+  DEVICE static void Run(const phi::AlignedVector<phi::dtype::float16, N> &in,
+                         phi::AlignedVector<phi::dtype::float16, N> *out) {
     const __half2 *in_ptr =
         static_cast<const __half2 *>(static_cast<const void *>(&in[0]));
     __half2 *out_ptr = static_cast<__half2 *>(static_cast<void *>(&(*out)[0]));
 #pragma unroll
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < N / 2; ++i) {
       out_ptr[i] = __hadd2(out_ptr[i], in_ptr[i]);
+    }
+    if (N % 2 != 0) {
+      (*out)[N - 1] += in[N - 1];
     }
   }
 };
 
-template <typename T, typename BarrierT, int N, int VecSize>
-static __global__ void OneShotAllReduceKernel(
-    phi::Array<const T *, N> ins,
-    phi::Array<volatile BarrierT *, N> barriers,
-    BarrierT barrier_value,
+template <typename T, int N, int VecSize, bool HasLeftValue = true>
+static __device__ __forceinline__ void AllReduceFunc(
+    const phi::Array<T *, N> &ins,
+    int idx,
+    int stride,
+    int n,
     int rank,
-    size_t n,
     T *out) {
-  BarrierAllGPUs<BarrierT, N>(barriers, barrier_value, rank);
-
-  size_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * VecSize;
-  size_t stride = (blockDim.x * gridDim.x) * VecSize;
-  size_t limit = n - VecSize;
-
   using AlignedVec = phi::AlignedVector<T, VecSize>;
   while (idx + VecSize <= n) {
     AlignedVec in_vecs[N];
@@ -145,7 +142,7 @@ static __global__ void OneShotAllReduceKernel(
     idx += stride;
   }
 
-  while (idx < n) {
+  while (HasLeftValue && idx < n) {
     T sum = ins[0][idx];
 #pragma unroll
     for (int i = 1; i < N; ++i) {
@@ -153,6 +150,68 @@ static __global__ void OneShotAllReduceKernel(
     }
     out[idx] = sum;
     ++idx;
+  }
+}
+
+template <typename T, typename BarrierT, int N, int VecSize>
+static __global__ void OneShotAllReduceKernel(
+    phi::Array<T *, N> ins,
+    phi::Array<volatile BarrierT *, N> barriers,
+    BarrierT barrier_value,
+    int rank,
+    size_t n,
+    T *out) {
+  BarrierAllGPUs<BarrierT, N>(barriers, barrier_value, rank);
+
+  int idx = (threadIdx.x + blockIdx.x * blockDim.x) * VecSize;
+  int stride = (blockDim.x * gridDim.x) * VecSize;
+  AllReduceFunc<T, N, VecSize>(ins, idx, stride, n, rank, out);
+}
+
+template <typename T, int VecSize>
+static __device__ __forceinline__ void VecStoreGlobalMem(const T *x, T *y) {
+  using AlignedVec = phi::AlignedVector<T, VecSize>;
+  const auto *x_vec =
+      static_cast<const AlignedVec *>(static_cast<const void *>(x));
+  auto *y_vec = static_cast<AlignedVec *>(static_cast<void *>(y));
+  y_vec[0] = x_vec[0];
+}
+
+template <typename T, typename BarrierT, int N, int VecSize>
+static __global__ void TwoShotAllReduceKernel(
+    phi::Array<T *, N> ins,
+    phi::Array<volatile BarrierT *, N> barriers,
+    BarrierT barrier_value,
+    int rank,
+    size_t n,
+    T *out) {
+  BarrierAllGPUs<BarrierT, N>(barriers, barrier_value, rank);
+  const size_t n_per_gpu = n / N;
+  int idx =
+      (threadIdx.x + blockIdx.x * blockDim.x) * VecSize + rank * n_per_gpu;
+  int stride = (blockDim.x * gridDim.x) * VecSize;
+  int limit = (rank + 1) * n_per_gpu;
+  AllReduceFunc<T, N, VecSize, false>(ins, idx, stride, limit, rank, ins[rank]);
+
+  BarrierAllGPUs<BarrierT, N>(barriers, barrier_value + 1, rank);
+  using AlignedVec = phi::AlignedVector<T, VecSize>;
+
+  int dst_offset[N];
+  int dst_rank[N];
+#pragma unroll
+  for (int i = 0; i < N; ++i) {
+    int tmp = (i + rank) % N;
+    dst_rank[i] = tmp;
+    dst_offset[i] = (tmp - rank) * n_per_gpu;
+  }
+
+  while (idx + VecSize <= limit) {
+#pragma unroll
+    for (int i = 0; i < N; ++i) {
+      auto dst_idx = idx + dst_offset[i];
+      VecStoreGlobalMem<T, VecSize>(ins[dst_rank[i]] + dst_idx, out + dst_idx);
+    }
+    idx += stride;
   }
 }
 
@@ -187,7 +246,6 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
       phi::Dim<1> dim;
       dim[0] = static_cast<int64_t>(size);
       t_.Resize(dim);
-      // void *ptr = comm->ctx_->template Alloc<T>(&t_);
       void *ptr =
           t_.AllocateFrom(SystemCUDAAllocator::Instance(),
                           paddle::experimental::CppTypeToDataType<T>::Type());
@@ -290,8 +348,14 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
   static_assert(sizeof(BarrierDType) == sizeof(BarrierTensorDType),
                 "Size not match");
 
-  CustomNCCLCommImpl(const phi::GPUContext &ctx, size_t max_size, int ring_id)
-      : ctx_(&ctx), max_size_(max_size) {
+  CustomNCCLCommImpl(const phi::GPUContext &ctx,
+                     size_t one_shot_max_size,
+                     size_t two_shot_max_size,
+                     int ring_id)
+      : ctx_(&ctx),
+        one_shot_max_size_(one_shot_max_size),
+        two_shot_max_size_(two_shot_max_size) {
+    PADDLE_ENFORCE_LT(one_shot_max_size, two_shot_max_size);
     auto comm =
         platform::NCCLCommContext::Instance().Get(ring_id, ctx.GetPlace());
     comm_ = comm->comm();
@@ -305,7 +369,9 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
     barrier_value_ = 0;
     VLOG(10) << "CustomNCCLCommImpl::CustomNCCLCommImpl";
     ins_ = std::make_unique<P2PBuffer<uint8_t>>(
-        this, max_size, [](const phi::GPUContext &ctx, phi::DenseTensor *t) {});
+        this,
+        two_shot_max_size_,
+        [](const phi::GPUContext &ctx, phi::DenseTensor *t) {});
     VLOG(10) << "CustomNCCLCommImpl::ins_ inited";
 
     barriers_ = std::make_unique<P2PBuffer<BarrierTensorDType>>(
@@ -321,8 +387,10 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
 
   void SwapInput(phi::DenseTensor *x) override {
     out_ = *x;
-    auto mem_size = x->numel() * phi::SizeOf(x->dtype());
-    if (mem_size <= max_size_ && !HasReachMaxBarrierValue()) {
+    auto numel = x->numel();
+    auto dtype = x->dtype();
+    auto algo = ChooseAlgo(numel, dtype);
+    if (algo <= 2 && !HasReachMaxBarrierValue(algo)) {
       ShareTensor(x, ins_->GetMutableTensor());
     }
   }
@@ -330,24 +398,15 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
   phi::DenseTensor AllReduce() override {
     auto dtype = out_.dtype();
     auto numel = out_.numel();
-    auto mem_size = numel * phi::SizeOf(dtype);
-    if (mem_size > max_size_ || HasReachMaxBarrierValue()) {
-      auto out_ptr = out_.data();
-      auto nccl_dtype = platform::ToNCCLDataType(dtype);
-      PADDLE_ENFORCE_GPU_SUCCESS(phi::dynload::ncclAllReduce(
-          out_ptr, out_ptr, numel, nccl_dtype, ncclSum, comm_, ctx_->stream()));
-      VLOG(10) << "Use ncclAllReduce since " << mem_size << " > " << max_size_;
-      if (HasReachMaxBarrierValue()) {
-        Barrier();
-        auto *barrier_tensor = barriers_->GetMutableTensor();
-        PADDLE_ENFORCE_GPU_SUCCESS(cudaMemsetAsync(
-            barrier_tensor->data(),
-            0,
-            barrier_tensor->numel() * sizeof(BarrierTensorDType),
-            ctx_->stream()));
-        Barrier();
-        barrier_value_ = 0;
-      }
+    auto algo = ChooseAlgo(numel, dtype);
+    if (algo > 2) {
+      NCCLAllReduce(out_.data(), numel, dtype);
+      return std::move(out_);
+    }
+
+    if (HasReachMaxBarrierValue(algo)) {
+      NCCLAllReduce(out_.data(), numel, dtype);
+      ResetBarriers();
       return std::move(out_);
     }
 
@@ -355,12 +414,14 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
   do {                                                                    \
     if (dtype ==                                                          \
         ::paddle::experimental::CppTypeToDataType<__cpp_dtype>::Type()) { \
-      return AllReduceImpl<__cpp_dtype, __vec_size>();                    \
+      if (algo == 1) {                                                    \
+        return OneShotAllReduceImpl<__cpp_dtype, __vec_size>(numel);      \
+      } else {                                                            \
+        return TwoShotAllReduceImpl<__cpp_dtype, __vec_size>(numel);      \
+      }                                                                   \
     }                                                                     \
   } while (0)
 
-    VLOG(10) << "Use custom AllReduce since " << mem_size
-             << " <= " << max_size_;
     PD_CUSTOM_ALLREDUCE(phi::dtype::float16, 8);
     PD_CUSTOM_ALLREDUCE(float, 4);
     PD_CUSTOM_ALLREDUCE(double, 2);
@@ -369,35 +430,90 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
   }
 
  private:
-  bool HasReachMaxBarrierValue() const {
-    return barrier_value_ == std::numeric_limits<BarrierDType>::max();
+  uint32_t ChooseAlgo(size_t numel,
+                      paddle::experimental::DataType dtype) const {
+    auto sizeof_dtype = phi::SizeOf(dtype);
+    auto mem_size = numel * sizeof_dtype;
+    if (mem_size <= one_shot_max_size_) {
+      return 1;
+    } else if (mem_size <= two_shot_max_size_ && numel % N == 0 &&
+               (numel / N) % (16 / sizeof_dtype) == 0) {
+      return 2;
+    } else {
+      return 3;
+    }
+  }
+
+  void NCCLAllReduce(void *ptr,
+                     size_t numel,
+                     paddle::experimental::DataType dtype) {
+    auto nccl_dtype = platform::ToNCCLDataType(dtype);
+    PADDLE_ENFORCE_GPU_SUCCESS(phi::dynload::ncclAllReduce(
+        ptr, ptr, numel, nccl_dtype, ncclSum, comm_, ctx_->stream()));
+  }
+
+  void ResetBarriers() {
+    LOG(INFO) << "barrier_value_ " << barrier_value_ << " , restart barrier";
+    Barrier();
+    auto *barrier_tensor = barriers_->GetMutableTensor();
+    PADDLE_ENFORCE_GPU_SUCCESS(
+        cudaMemsetAsync(barrier_tensor->data(),
+                        0,
+                        barrier_tensor->numel() * sizeof(BarrierTensorDType),
+                        ctx_->stream()));
+    Barrier();
+    barrier_value_ = 0;
+  }
+
+  bool HasReachMaxBarrierValue(int algo) const {
+    return barrier_value_ > std::numeric_limits<BarrierDType>::max() - algo;
   }
 
   template <typename T, int VecSize>
-  phi::DenseTensor AllReduceImpl() {
-    const auto &in_ptrs = ins_->template GetPtrs<const T>();
+  phi::DenseTensor OneShotAllReduceImpl(int64_t numel) {
+    const auto &in_ptrs = ins_->template GetPtrs<T>();
     const auto &barrier_ptrs =
         barriers_->template GetPtrs<volatile BarrierDType>();
     auto *out_data = out_.template data<T>();
     ++barrier_value_;
 
-    int64_t numel = out_.numel();
     int threads = ctx_->GetMaxThreadsPerBlock();
     PADDLE_ENFORCE_GE(threads, N);
     int64_t blocks = ((numel + VecSize - 1) / VecSize + threads - 1) / threads;
     blocks = std::min<int64_t>(blocks, ctx_->GetCUDAMaxGridDimSize()[0]);
+    VLOG(10) << "Use OneShotAllReduceKernel for size = " << numel;
     OneShotAllReduceKernel<T, BarrierDType, N, VecSize>
-        <<<blocks, threads, 0, ctx_->stream()>>>(in_ptrs,
-                                                 barrier_ptrs,
-                                                 barrier_value_,
-                                                 rank_,
-                                                 out_.numel(),
-                                                 out_data);
+        <<<blocks, threads, 0, ctx_->stream()>>>(
+            in_ptrs, barrier_ptrs, barrier_value_, rank_, numel, out_data);
+    return std::move(out_);
+  }
+
+  template <typename T, int VecSize>
+  phi::DenseTensor TwoShotAllReduceImpl(int64_t numel) {
+    PADDLE_ENFORCE_EQ(numel % N, 0);
+    const auto &in_ptrs = ins_->template GetPtrs<T>();
+    const auto &barrier_ptrs =
+        barriers_->template GetPtrs<volatile BarrierDType>();
+    auto *out_data = out_.template data<T>();
+    if (barrier_value_ > 0) {
+      barrier_value_ += 2;
+    } else {
+      barrier_value_ = 1;
+    }
+
+    int threads = ctx_->GetMaxThreadsPerBlock();
+    PADDLE_ENFORCE_GE(threads, N);
+    int64_t blocks =
+        ((numel / N + VecSize - 1) / VecSize + threads - 1) / threads;
+    VLOG(10) << "Use TwoShotAllReduceKernel for size = " << numel;
+    TwoShotAllReduceKernel<T, BarrierDType, N, VecSize>
+        <<<blocks, threads, 0, ctx_->stream()>>>(
+            in_ptrs, barrier_ptrs, barrier_value_, rank_, numel, out_data);
     return std::move(out_);
   }
 
   void ShareTensor(phi::DenseTensor *x, phi::DenseTensor *y) {
-    PADDLE_ENFORCE_LE(x->numel(), max_size_);
+    PADDLE_ENFORCE_LE(x->numel(), two_shot_max_size_);
     const void *y_ptr = y->data();
     y->Resize(x->dims());
     auto *new_y_ptr = ctx_->Alloc(y, x->dtype());
@@ -439,26 +555,31 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
   phi::DenseTensor out_;
 
   const phi::GPUContext *ctx_;
-  size_t max_size_;
+  size_t one_shot_max_size_;
+  size_t two_shot_max_size_;
   ncclComm_t comm_;
   int rank_;
 };
 
 static std::unique_ptr<CustomNCCLComm> CreateCustomNCCLComm(
-    const phi::GPUContext &ctx, int64_t max_size, int ring_id) {
-  if (max_size <= 0) {
+    const phi::GPUContext &ctx,
+    int64_t one_shot_max_size,
+    int64_t two_shot_max_size,
+    int ring_id) {
+  if (one_shot_max_size <= 0 || two_shot_max_size <= 0 ||
+      one_shot_max_size >= two_shot_max_size) {
     return nullptr;
   }
 
   auto nranks = platform::NCCLCommContext::Instance()
                     .Get(ring_id, ctx.GetPlace())
                     ->nranks();
-#define PD_CREATE_CUSTOM_NCCL_COMM(__nranks)                 \
-  do {                                                       \
-    if (nranks == __nranks) {                                \
-      return std::make_unique<CustomNCCLCommImpl<__nranks>>( \
-          ctx, max_size, ring_id);                           \
-    }                                                        \
+#define PD_CREATE_CUSTOM_NCCL_COMM(__nranks)                   \
+  do {                                                         \
+    if (nranks == __nranks) {                                  \
+      return std::make_unique<CustomNCCLCommImpl<__nranks>>(   \
+          ctx, one_shot_max_size, two_shot_max_size, ring_id); \
+    }                                                          \
   } while (0)
 
   PD_CREATE_CUSTOM_NCCL_COMM(8);
