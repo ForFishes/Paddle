@@ -260,7 +260,10 @@ while (idx + VecSize <= limit) {
     }
     idx += stride;
 }
+
 }
+
+
 
 class CustomNCCLComm {
  public:
@@ -452,8 +455,6 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
     }
 
     barrier_value_ = ((uint32_t)((barrier_value_ + 1) % 0x146));
-    // barrier_value_ = ((uint32_t)((barrier_value_) % 0x146));
-
 
 #define PD_CUSTOM_ALLREDUCE(__cpp_dtype, __vec_size)                      \
   do {                                                                    \
