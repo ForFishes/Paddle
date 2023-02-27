@@ -32,6 +32,9 @@
 namespace paddle {
 namespace operators {
 
+
+#define MAX_BLOCKS  1024
+
 class SystemCUDAAllocator : public phi::Allocator {
  public:
   static phi::Allocator *Instance() {
@@ -84,6 +87,23 @@ static __forceinline__ __device__ void BarrierAllGPUs(
     }
   }
 
+  __syncthreads();
+}
+
+
+template <typename T, int N>
+static __forceinline__ __device__ void BarrierAllGPUsAllBlocks(
+    const phi::Array<volatile T *, N> &barriers, T barrier_value, int rank) {
+  int bid = blockIdx.x;
+  int tid = threadIdx.x;
+  if (tid < N) {
+    uint32_t flag_block_offset =  N + bid * N;
+    barriers[tid][flag_block_offset + rank] = barrier_value;
+    uint32_t rank_barrier  = 0;
+    do {
+        rank_barrier = barriers[rank][flag_block_offset + tid];
+    } while (rank_barrier != barrier_value);
+  }
   __syncthreads();
 }
 
@@ -192,10 +212,35 @@ static __global__ void TwoShotAllReduceKernel(
   int stride = (blockDim.x * gridDim.x) * VecSize;
   int limit = (rank + 1) * n_per_gpu;
   AllReduceFunc<T, N, VecSize, false>(ins, idx, stride, limit, rank, ins[rank]);
+}
 
-  BarrierAllGPUs<BarrierT, N>(barriers, barrier_value + 1, rank);
-  using AlignedVec = phi::AlignedVector<T, VecSize>;
 
+template <typename T, typename BarrierT, int N, int VecSize>
+static __global__ void GatherKernel(
+    phi::Array<T *, N> ins,
+    phi::Array<volatile BarrierT *, N> barriers,
+    BarrierT barrier_value,
+    int rank,
+    size_t n,
+    T *out) {
+  const size_t n_per_gpu = n / N;
+
+  int stride = (blockDim.x * gridDim.x) * VecSize;
+  int limit = (rank + 1) * n_per_gpu;
+  int bid = blockIdx.x;
+  int tid = threadIdx.x;
+  if (tid < N) {
+    uint32_t flag_block_offset =  N + bid * N;
+    barriers[tid][flag_block_offset + rank] = barrier_value;
+    uint32_t rank_barrier  = 0;
+    do {
+        rank_barrier = barriers[rank][flag_block_offset + tid];
+    } while (rank_barrier != barrier_value);
+  }
+  __syncthreads();
+
+  int idx =
+      (threadIdx.x + blockIdx.x * blockDim.x) * VecSize + rank * n_per_gpu;
   int dst_offset[N];
   int dst_rank[N];
 #pragma unroll
@@ -205,14 +250,16 @@ static __global__ void TwoShotAllReduceKernel(
     dst_offset[i] = (tmp - rank) * n_per_gpu;
   }
 
-  while (idx + VecSize <= limit) {
+while (idx + VecSize <= limit) {
 #pragma unroll
     for (int i = 0; i < N; ++i) {
       auto dst_idx = idx + dst_offset[i];
-      VecStoreGlobalMem<T, VecSize>(ins[dst_rank[i]] + dst_idx, out + dst_idx);
+      for(int j =0; j< VecSize; j+=1){
+        out[dst_idx+j] = ins[dst_rank[i]][dst_idx+j];
+      }
     }
     idx += stride;
-  }
+}
 }
 
 class CustomNCCLComm {
@@ -375,7 +422,7 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
     VLOG(10) << "CustomNCCLCommImpl::ins_ inited";
 
     barriers_ = std::make_unique<P2PBuffer<BarrierTensorDType>>(
-        this, N, [](const phi::GPUContext &ctx, phi::DenseTensor *t) {
+        this, N * (MAX_BLOCKS + 1), [](const phi::GPUContext &ctx, phi::DenseTensor *t) {
           PADDLE_ENFORCE_GPU_SUCCESS(
               cudaMemsetAsync(t->data(),
                               0,
@@ -404,11 +451,9 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
       return std::move(out_);
     }
 
-    if (HasReachMaxBarrierValue(algo)) {
-      NCCLAllReduce(out_.data(), numel, dtype);
-      ResetBarriers();
-      return std::move(out_);
-    }
+    barrier_value_ = ((uint32_t)((barrier_value_ + 1) % 0x146));
+    // barrier_value_ = ((uint32_t)((barrier_value_) % 0x146));
+
 
 #define PD_CUSTOM_ALLREDUCE(__cpp_dtype, __vec_size)                      \
   do {                                                                    \
@@ -475,12 +520,11 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
     const auto &barrier_ptrs =
         barriers_->template GetPtrs<volatile BarrierDType>();
     auto *out_data = out_.template data<T>();
-    ++barrier_value_;
 
     int threads = ctx_->GetMaxThreadsPerBlock();
     PADDLE_ENFORCE_GE(threads, N);
     int64_t blocks = ((numel + VecSize - 1) / VecSize + threads - 1) / threads;
-    blocks = std::min<int64_t>(blocks, ctx_->GetCUDAMaxGridDimSize()[0]);
+    blocks = std::min<int64_t>(blocks, MAX_BLOCKS);
     VLOG(10) << "Use OneShotAllReduceKernel for size = " << numel;
     OneShotAllReduceKernel<T, BarrierDType, N, VecSize>
         <<<blocks, threads, 0, ctx_->stream()>>>(
@@ -495,20 +539,20 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
     const auto &barrier_ptrs =
         barriers_->template GetPtrs<volatile BarrierDType>();
     auto *out_data = out_.template data<T>();
-    if (barrier_value_ > 0) {
-      barrier_value_ += 2;
-    } else {
-      barrier_value_ = 1;
-    }
-
     int threads = ctx_->GetMaxThreadsPerBlock();
     PADDLE_ENFORCE_GE(threads, N);
-    int64_t blocks =
-        ((numel / N + VecSize - 1) / VecSize + threads - 1) / threads;
+    int64_t blocks = ((numel / N  + VecSize - 1) / VecSize + threads - 1) / threads;
+    blocks = std::min<int64_t>(blocks, MAX_BLOCKS);
     VLOG(10) << "Use TwoShotAllReduceKernel for size = " << numel;
+
     TwoShotAllReduceKernel<T, BarrierDType, N, VecSize>
         <<<blocks, threads, 0, ctx_->stream()>>>(
             in_ptrs, barrier_ptrs, barrier_value_, rank_, numel, out_data);
+
+    GatherKernel<T, BarrierDType, N, VecSize>
+        <<<blocks, threads, 0, ctx_->stream()>>>(
+            in_ptrs, barrier_ptrs, barrier_value_, rank_, numel, out_data);
+
     return std::move(out_);
   }
 
