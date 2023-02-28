@@ -206,12 +206,66 @@ static __global__ void TwoShotAllReduceKernel(
     size_t n,
     T *out) {
   BarrierAllGPUs<BarrierT, N>(barriers, barrier_value, rank);
+    __syncthreads();
+
   const size_t n_per_gpu = n / N;
   int idx =
       (threadIdx.x + blockIdx.x * blockDim.x) * VecSize + rank * n_per_gpu;
   int stride = (blockDim.x * gridDim.x) * VecSize;
   int limit = (rank + 1) * n_per_gpu;
   AllReduceFunc<T, N, VecSize, false>(ins, idx, stride, limit, rank, ins[rank]);
+
+  __syncthreads();
+
+  // const size_t n_per_gpu = n / N;
+
+  // int stride = (blockDim.x * gridDim.x) * VecSize;
+  // int limit = (rank + 1) * n_per_gpu;
+  int bid = blockIdx.x;
+  int tid = threadIdx.x;
+  if (tid < N) {
+    uint32_t flag_block_offset = N + bid * N;
+
+#if __CUDA_ARCH__ >= 700
+    asm volatile("st.global.release.sys.b32 [%1], %0;" ::"r"(barrier_value), "l"(barriers[tid]+ flag_block_offset + rank));
+#else
+    __threadfence_system();
+    asm volatile("st.global.volatile.b32 [%1], %0;" ::"r"(barrier_value), "l"(barriers[tid]+ flag_block_offset + rank));
+#endif
+
+    uint32_t rank_barrier  = 0;
+    do {
+        // rank_barrier = barriers[rank][flag_block_offset + tid];
+        // asm volatile("ld.global.acquire.sys.b32 %0, [%1];" : "=r"(rank_barrier) : "l"(barriers[rank] + flag_block_offset + tid));
+#if __CUDA_ARCH__ >= 700
+    asm volatile("ld.global.acquire.sys.b32 %0, [%1];" : "=r"(rank_barrier) : "l"(barriers[rank] + flag_block_offset + tid));
+#else
+    asm volatile("ld.global.volatile.b32 %0, [%1];" : "=r"(rank_barrier) : "l"(barriers[rank] + flag_block_offset + tid));
+#endif
+
+    } while (rank_barrier != barrier_value);
+  }
+  __syncthreads();
+
+  int dst_offset[N];
+  int dst_rank[N];
+#pragma unroll
+  for (int i = 0; i < N; ++i) {
+    int tmp = (i + rank) % N;
+    dst_rank[i] = tmp;
+    dst_offset[i] = (tmp - rank) * n_per_gpu;
+  }
+
+while (idx + VecSize <= limit) {
+#pragma unroll
+    for (int i = 0; i < N; ++i) {
+      auto dst_idx = idx + dst_offset[i];
+      for(int j =0; j< VecSize; j+=1){
+        out[dst_idx+j] = ins[dst_rank[i]][dst_idx+j];
+      }
+    }
+    idx += stride;
+}
 }
 
 
@@ -230,11 +284,15 @@ static __global__ void GatherKernel(
   int bid = blockIdx.x;
   int tid = threadIdx.x;
   if (tid < N) {
-    uint32_t flag_block_offset =  N + bid * N;
-    barriers[tid][flag_block_offset + rank] = barrier_value;
+    uint32_t flag_block_offset = N + bid * N;
+    // barriers[tid][flag_block_offset + rank] = barrier_value;
+    asm volatile("st.global.release.sys.b32 [%1], %0;" ::"r"(barrier_value), 
+      "l"(barriers[tid]+ flag_block_offset + rank));
+
     uint32_t rank_barrier  = 0;
     do {
-        rank_barrier = barriers[rank][flag_block_offset + tid];
+        // rank_barrier = barriers[rank][flag_block_offset + tid];
+        asm volatile("ld.global.acquire.sys.b32 %0, [%1];" : "=r"(rank_barrier) : "l"(barriers[rank] + flag_block_offset + tid));
     } while (rank_barrier != barrier_value);
   }
   __syncthreads();
@@ -550,9 +608,9 @@ class CustomNCCLCommImpl : public CustomNCCLComm {
         <<<blocks, threads, 0, ctx_->stream()>>>(
             in_ptrs, barrier_ptrs, barrier_value_, rank_, numel, out_data);
 
-    GatherKernel<T, BarrierDType, N, VecSize>
-        <<<blocks, threads, 0, ctx_->stream()>>>(
-            in_ptrs, barrier_ptrs, barrier_value_, rank_, numel, out_data);
+    // GatherKernel<T, BarrierDType, N, VecSize>
+    //     <<<blocks, threads, 0, ctx_->stream()>>>(
+    //         in_ptrs, barrier_ptrs, barrier_value_, rank_, numel, out_data);
 
     return std::move(out_);
   }
