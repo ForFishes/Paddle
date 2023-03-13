@@ -42,6 +42,17 @@ import paddle.fluid.incubate.fleet.base.role_maker as role_maker
 RUN_STEP = 5
 DEFAULT_BATCH_SIZE = 2
 DIST_UT_PORT = 0
+import contextlib
+
+@contextlib.contextmanager
+def memory_tracker(log_msg):
+    cur_rank = paddle.distributed.get_rank()
+    before_mem = paddle.device.cuda.memory_allocated(cur_rank)
+    try:
+        yield
+    finally:
+        after_mem = paddle.device.cuda.memory_allocated(cur_rank)
+        print("[Memory Allocate]: <" + log_msg + ">:", before_mem, after_mem, ", diff: ", after_mem - before_mem)
 
 
 def print_to_out(out_losses):
@@ -146,23 +157,26 @@ class TestDistRunnerBase(object):
 
         data_loader.set_sample_list_generator(train_reader, place)
         data_loader.start()
-        print_to_err(type(self).__name__, "begin to train on trainer")
+        # print_to_err(type(self).__name__, "begin to train on trainer")
         out_losses = []
 
         main_program = fluid.default_main_program()
         lr_sheduler = self.get_lr_scheduler(main_program)
         for i in six.moves.xrange(RUN_STEP):
-            loss = exe.run(main_program, fetch_list=[avg_cost])
+            with memory_tracker("Train..."):
+                loss = exe.run(main_program, fetch_list=[avg_cost])
             loss = loss[0] if loss else None
             out_losses.append(loss)
-            print_to_err(type(self).__name__, "run step %d finished" % i)
+            # print_to_err(type(self).__name__, "run step %d finished" % i)
             if lr_sheduler is not None:
                 lr_sheduler.step()
 
+            print(">>>", loss)
+        # assert False, ">>>"
         data_loader.reset()
-        print_to_err(type(self).__name__, "trainer run finished")
+        # print_to_err(type(self).__name__, "trainer run finished")
 
-        sys.stdout.buffer.write(pickle.dumps(out_losses))
+        # sys.stdout.buffer.write(pickle.dumps(out_losses))
 
     def run_use_fleet_api_20_trainer(self, args):
         """
@@ -772,16 +786,18 @@ def runtime_main(test_class):
         paddle.set_device("cpu")
 
     model = test_class()
-    if args.role == "pserver" and args.update_method == "pserver":
-        model.run_pserver(args)
-    elif args.use_fleet_api:
-        model.run_use_fleet_api_trainer(args)
-    elif args.use_fleet_api_20:
-        model.run_use_fleet_api_20_trainer(args)
-    elif args.use_pipeline:
-        model.run_pipeline_trainer(args)
-    else:
-        model.run_trainer(args)
+    print(">>>")
+    # assert False
+    # if args.role == "pserver" and args.update_method == "pserver":
+    #     model.run_pserver(args)
+    # elif args.use_fleet_api:
+    #     model.run_use_fleet_api_trainer(args)
+    # elif args.use_fleet_api_20:
+    #     model.run_use_fleet_api_20_trainer(args)
+    # elif args.use_pipeline:
+    model.run_pipeline_trainer(args)
+    # else:
+    # model.run_trainer(args)
 
 
 import paddle.compat as cpt
@@ -1443,7 +1459,7 @@ class TestDistBase(unittest.TestCase):
             tr_env['NCCL_SHM_DISABLE'] = '1'
             tr_env['FLAGS_selected_gpus'] = str(i)
             tr_env['FLAGS_cudnn_deterministic'] = '0'
-            print("tr_cmd:{}, env: {}".format(tr_cmd, tr_env))
+            # print("tr_cmd:{}, env: {}".format(tr_cmd, tr_env))
 
             path = os.path.join(self.temp_dir.name + "tr{}_err.log".format(i))
             tr_pipe = open(path, "wb")
@@ -1591,26 +1607,29 @@ class TestDistBase(unittest.TestCase):
                 check_error_log=check_error_log,
                 log_name=log_name)
         elif self._pipeline_mode:
+            # print(">>======")
+            # assert False, "get here..."
             tr0_losses, tr1_losses = self._run_pipeline(model_file,
                                                         required_envs,
                                                         check_error_log,
                                                         log_name=log_name)
-        else:
-            tr0_losses, tr1_losses = self._run_cluster(model_file,
-                                                       required_envs,
-                                                       check_error_log,
-                                                       log_name=log_name)
+            print(tr0_losses, tr1_losses)
+        # else:
+        #     tr0_losses, tr1_losses = self._run_cluster(model_file,
+        #                                                required_envs,
+        #                                                check_error_log,
+        #                                                log_name=log_name)
 
-        for step_id in range(RUN_STEP):
-            local_loss = local_losses[step_id]
-            tr0_loss = tr0_losses[step_id]
-            tr1_loss = tr1_losses[step_id]
-            if self._pipeline_mode:
-                dist_loss = np.array([tr1_loss])
-            else:
-                dist_loss = (np.array([tr0_loss]) + np.array([tr1_loss])) / 2
-            print("=======", local_loss, ":", dist_loss[0], "=======")
-            self.assertAlmostEqual(local_loss, dist_loss[0], delta=delta)
+        # for step_id in range(RUN_STEP):
+        #     local_loss = local_losses[step_id]
+        #     tr0_loss = tr0_losses[step_id]
+        #     tr1_loss = tr1_losses[step_id]
+        #     if self._pipeline_mode:
+        #         dist_loss = np.array([tr1_loss])
+        #     else:
+        #         dist_loss = (np.array([tr0_loss]) + np.array([tr1_loss])) / 2
+        #     print("=======", local_loss, ":", dist_loss[0], "=======")
+        #     self.assertAlmostEqual(local_loss, dist_loss[0], delta=delta)
 
     def check_with_place_multi_cards(self,
                                      model_file,

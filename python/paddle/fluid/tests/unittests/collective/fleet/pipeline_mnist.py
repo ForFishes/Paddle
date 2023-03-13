@@ -125,7 +125,7 @@ class TestDistMnist2x2(TestDistRunnerBase):
             learning_rate=lr_val,
             grad_clip=fluid.clip.GradientClipByGlobalNorm(clip_norm=1.0))
 
-        acc_steps = 2  # accumulated steps for pipeline
+        acc_steps = 10  # accumulated steps for pipeline
         if dist_strategy:
             # Reader
             train_reader = paddle.batch(paddle.dataset.mnist.test(),
