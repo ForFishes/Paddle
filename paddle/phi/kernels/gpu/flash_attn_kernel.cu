@@ -79,9 +79,8 @@ void FlashAttnRawKernel(const Context& ctx,
   uint64_t seed = seed_offset_pair.first;
   uint64_t offset = seed_offset_pair.second;
 
-  paddle::platform::CPUPlace cpu_place;
   seed_offset->Resize({2});
-  auto* seed_offset_data = seed_offset->mutable_data<uint64_t>(cpu_place);
+  auto* seed_offset_data = ctx.template HostAlloc<uint64_t>(seed_offset);
   seed_offset_data[0] = seed;
   seed_offset_data[1] = offset;
 

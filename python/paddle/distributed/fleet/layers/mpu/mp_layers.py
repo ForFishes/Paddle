@@ -334,7 +334,6 @@ class MPScale(PyLayer):
     @staticmethod
     def forward(ctx, x, mp_degree):
         out = paddle.scale(x, 1.0 / mp_degree)
-        ctx.mp_degree = mp_degree
         return out
 
     @staticmethod
