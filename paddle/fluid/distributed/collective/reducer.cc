@@ -961,7 +961,7 @@ void EagerReducer::ProcessUnusedDenseVars() {
   for (auto &t : reduce_tensors) {
     in_out.push_back(*std::dynamic_pointer_cast<phi::DenseTensor>(t.impl()));
   }
-  process_group_->AllReduce(in_out, in_out, opts)->Synchronize();
+  process_group_->AllReduce(in_out, in_out, opts, false)->Synchronize();
 
   framework::TensorToVector<int>(
       *global_used_tensor, *dev_ctx, &local_used_vars_);
@@ -1057,7 +1057,7 @@ void EagerReducer::FusedAllReduceSchedule(EagerGroup *group,
   for (auto &t : reduce_tensors) {
     in_out.push_back(*std::dynamic_pointer_cast<phi::DenseTensor>(t.impl()));
   }
-  group->task = process_group_->AllReduce(in_out, in_out, opts);
+  group->task = process_group_->AllReduce(in_out, in_out, opts, false);
 
   auto *context = process_group_->GetDeviceContext(inner_place_);
 
