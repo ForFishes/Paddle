@@ -8,6 +8,11 @@ cc_library(
   SRCS reducer.cc
   DEPS eager_api process_group phi_api string_helper)
 
+cc_library(
+  cuda_tensor_ipc
+  SRCS cuda_tensor_ipc
+  DEPS dense_tensor device_context enforce place ${DEVICE_EVENT_LIBS})
+
 if(WITH_DISTRIBUTE)
   cc_library(
     process_group_gloo
