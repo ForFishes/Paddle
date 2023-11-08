@@ -238,6 +238,7 @@ void BindAutoParallel(py::module *m) {
       .def("contains", &ProcessMesh::contains)
       .def(py::self == py::self)
       .def(py::self != py::self)
+      .def("__hash__", [](const ProcessMesh &self) { return self.hash(); })
       .def("__copy__",
            [](const ProcessMesh &self) { return ProcessMesh(self); })
       .def(

@@ -46,6 +46,24 @@ class ProcessMesh {
 
   int64_t ndim() const { return shape_.size(); }
 
+  size_t hash() const {
+    std::size_t seed = 0;
+    auto hash_combine = [&seed](std::size_t hash) {
+      seed ^= hash + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    };
+
+    for (const auto& item : shape_) {
+      hash_combine(std::hash<int64_t>()(item));
+    }
+    for (const auto& item : process_ids_) {
+      hash_combine(std::hash<int64_t>()(item));
+    }
+    for (const auto& item : dim_names_) {
+      hash_combine(std::hash<std::string>()(item));
+    }
+    return seed;
+  }
+
   int64_t dim_size(int64_t dim) const {
     int64_t cdim = auto_parallel::canonical_dim(dim, shape_.size());
     return shape_[cdim];
