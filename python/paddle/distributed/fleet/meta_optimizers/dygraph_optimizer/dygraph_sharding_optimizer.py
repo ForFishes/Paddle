@@ -28,6 +28,7 @@ from paddle.distributed.communication.reduce import (
     is_avg_reduce_op_supported,
 )
 
+from ...utils import timer_helper as timer
 from ...utils.log_util import logger
 from ...utils.tensor_fusion_helper import (
     HOOK_ACTION,
@@ -630,6 +631,13 @@ class DygraphShardingOptimizerV2:
         comm_buffer_size_MB = sharding_config.comm_buffer_size_MB
         free_grads_in_comm = sharding_config.free_grads_in_comm
 
+        self._enable_timer = strategy.hybrid_configs["enable_optimizer_timer"]
+
+        if self._enable_timer:
+            if not timer.is_timer_initialized():
+                timer.set_timers()
+            self.timers = timer.get_timers()
+
         # Setting pipeline parallelism overlap
         self.pp_overlap = pp_config.sharding_comm_overlap
         self.sd_release_grads = (
@@ -831,6 +839,8 @@ class DygraphShardingOptimizerV2:
         """
         sync parameter across sharding group
         """
+        if self._enable_timer:
+            self.timers("sync-parameters").start()
 
         logger.debug("sharding start sync parameters")
         with framework.no_grad():
@@ -855,6 +865,9 @@ class DygraphShardingOptimizerV2:
             else:
                 for comm_buffer in self._comm_buffer_list:
                     comm_buffer.sync_params()
+
+        if self._enable_timer:
+            self.timers("sync-parameters").stop()
 
     def _update_trainable(self):
         """
@@ -927,6 +940,9 @@ class DygraphShardingOptimizerV2:
         self._collect_comm_buffers()
         self._assign_slice_grad()
 
+        if self._enable_timer:
+            self.timers("apply-optimize").start()
+
         if not isinstance(self._parameter_list[0], dict):
             params_grads = []
             for param in self._parameter_list:
@@ -953,6 +969,9 @@ class DygraphShardingOptimizerV2:
                 startup_program=None,
                 params_grads=params_grads,
             )
+
+        if self._enable_timer:
+            self.timers("apply-optimize").stop()
 
         # sync parameters across sharding ranks
         self._sharding_sync_parameters()
