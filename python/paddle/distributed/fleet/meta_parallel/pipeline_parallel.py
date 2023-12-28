@@ -1241,6 +1241,12 @@ class PipelineParallelWithInterleaveFthenB(PipelineParallelWithInterleave):
             chunk_idx = self._virtual_pp_world_size - (
                 sync_step // self.accumulate_steps
             )
+
+            # sync last buffer
+            if chunk_idx + 1 < self._virtual_pp_world_size:
+                for buffer in self._chunk_2_comm_buffers[chunk_idx + 1]:
+                    buffer.scale_and_split_grads()
+
             for buffer in self._chunk_2_comm_buffers[chunk_idx]:
                 buffer.comm_grads()
 
@@ -1264,9 +1270,13 @@ class PipelineParallelWithInterleaveFthenB(PipelineParallelWithInterleave):
             f"but got {self._backward_step_count}, expected result is {expected_count}"
         )
 
-        for buffers in self._chunk_2_comm_buffers.values():
-            for buffer in buffers:
-                buffer.scale_and_split_grads()
+        # Only sync last buffer
+        # for buffers in self._chunk_2_comm_buffers.values():
+        #     for buffer in buffers:
+        #         buffer.scale_and_split_grads()
+
+        for buffer in self._chunk_2_comm_buffers[0]:
+            buffer.scale_and_split_grads()
 
     def forward_backward_pipeline(
         self, data, scaler, forward_only=False, compute_loss=True
