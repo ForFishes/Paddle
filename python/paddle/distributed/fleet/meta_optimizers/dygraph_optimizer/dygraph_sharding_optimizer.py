@@ -796,7 +796,6 @@ class DygraphShardingOptimizerV2:
     def reduce_gradients(self, parameter_list, hcg):
         # TODO merge grad / nrank with dp
         logger.debug("sharding start gradients sync")
-
         # sync here to guarantee cdnn_cluster parallel correct.
         if (
             paddle.is_compiled_with_xpu()
@@ -813,11 +812,16 @@ class DygraphShardingOptimizerV2:
             if g_sharding_v2_check_zero_padding:
                 self._check_padding_zero()
 
+            if self._enable_timer:
+                self.timers("reduce-gradients").start()
             for comm_buffer in self._comm_buffer_list:
                 if not self.comm_overlap:
                     comm_buffer._comm_grads()
 
                 comm_buffer.scale_grads()
+
+            if self._enable_timer:
+                self.timers("reduce-gradients").stop()
 
     def _check_padding_zero(self):
         for comm_buffer in self._comm_buffer_list:
