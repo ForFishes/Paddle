@@ -347,7 +347,7 @@ class DygraphShardingOptimizer:
                         naninf = paddle.isfinite(g_var).all()
                         if not naninf.item():
                             raise ValueError(
-                                f"Tensor contains inf or nan values at rank {paddle.distributed.get_rank()} before gradient communication"
+                                f"PaddleRecall LossNan error(102). Tensor contains inf or nan values at rank {paddle.distributed.get_rank()} before gradient communication"
                             )
 
                     paddle.distributed.reduce(
@@ -824,13 +824,17 @@ class DygraphShardingOptimizerV2:
                 self.timers("reduce-gradients").stop()
 
     def _check_padding_zero(self):
+        if self._enable_timer:
+            self.timers("check-padding-zero").start()
         for comm_buffer in self._comm_buffer_list:
             for k, v in comm_buffer._sharding_param_grad_view.items():
                 pad_tensor = v._get_padding()
                 if pad_tensor is not None:
                     assert paddle.all(
                         pad_tensor == 0
-                    ).item(), f"The padding of Tensor {k} is not zero"
+                    ).item(), f"PaddleRecall ShardingPadZero error(103). The padding of Tensor {k} is not zero"
+        if self._enable_timer:
+            self.timers("check-padding-zero").stop()
 
     def _forward_pre_hook_function(self, tasks):
         def __impl__(x, y):
@@ -944,9 +948,6 @@ class DygraphShardingOptimizerV2:
         self._collect_comm_buffers()
         self._assign_slice_grad()
 
-        if self._enable_timer:
-            self.timers("apply-optimize").start()
-
         if not isinstance(self._parameter_list[0], dict):
             params_grads = []
             for param in self._parameter_list:
@@ -968,14 +969,15 @@ class DygraphShardingOptimizerV2:
                 if grad_var is not None:
                     params_grads.append((param, grad_var))
 
+            if self._enable_timer:
+                self.timers("apply-optimize").start()
             self._apply_optimize(
                 loss=None,
                 startup_program=None,
                 params_grads=params_grads,
             )
-
-        if self._enable_timer:
-            self.timers("apply-optimize").stop()
+            if self._enable_timer:
+                self.timers("apply-optimize").stop()
 
         # sync parameters across sharding ranks
         self._sharding_sync_parameters()
