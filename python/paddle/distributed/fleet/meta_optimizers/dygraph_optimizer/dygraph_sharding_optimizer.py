@@ -347,7 +347,7 @@ class DygraphShardingOptimizer:
                         naninf = paddle.isfinite(g_var).all()
                         if not naninf.item():
                             raise ValueError(
-                                f"PaddleRecall LossNan error(102). Tensor contains inf or nan values at rank {paddle.distributed.get_rank()} before gradient communication"
+                                f"CUDA error(1002). Tensor contains inf or nan values at rank {paddle.distributed.get_rank()} before gradient communication"
                             )
 
                     paddle.distributed.reduce(
@@ -832,7 +832,7 @@ class DygraphShardingOptimizerV2:
                 if pad_tensor is not None:
                     assert paddle.all(
                         pad_tensor == 0
-                    ).item(), f"PaddleRecall ShardingPadZero error(103). The padding of Tensor {k} is not zero"
+                    ).item(), f"CUDA error(1003). The padding of Tensor {k} is not zero"
         if self._enable_timer:
             self.timers("check-padding-zero").stop()
 
