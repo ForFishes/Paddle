@@ -2351,3 +2351,175 @@ class PipelineParallelWithInterleaveFthenB(PipelineParallelWithInterleave):
 
         self.timer_printer()
         return train_loss
+
+
+class VPPFhenBInBalancedMemory(PipelineParallelWithInterleaveFthenB):
+    # def __init__(self, layers, hcg, strategy):
+    #     super().__init__(layers=layers, hcg=hcg, strategy=strategy)
+
+    def forward_backward_pipeline(
+        self,
+        data,
+        scaler,
+        forward_only=False,
+        compute_loss=True,
+        return_micro_batch_loss=False,
+    ):
+        if not compute_loss:
+            assert (
+                not forward_only
+            ), "compute_loss can only be set to False when forward_only is set to True"
+        assert (
+            self._using_cache
+        ), "cache should be enabled for pipeline with interleave"
+
+        # init some attributes for this batch run
+        self.scaler = scaler
+        self.total_loss = None
+        self.micro_batch_id = 0
+        self._forward_only = forward_only
+
+        assert (
+            self.accumulate_steps == self.num_stages
+            or self.accumulate_steps % self.num_stages != 0
+        ), f"accumulate_steps({self.accumulate_steps}) and num_stages({self.num_stages}) should be a multiple or accumulate_steps % num_stages == 0"
+
+        # init some data buffers for interleave scheduler
+        self.input_tensors = [[] for _ in range(self.num_model_chunks)]
+        self.output_tensors = [[] for _ in range(self.num_model_chunks)]
+        self.output_tensor_grads = [[] for _ in range(self.num_model_chunks)]
+
+        micro_dataset = self._wrap_data(data)
+        num_steps = self.accumulate_steps * self.num_model_chunks
+
+        # run FThenB startup
+        startup_steps_fthenb = (
+            self.accumulate_steps * (self.num_model_chunks - 1)
+            + self.num_stages
+            - self.stage_id
+            - 1
+        )
+
+        self.set_virtual_pipeline_rank(0)
+        self.input_tensors[0].append(
+            self._p2p_helper.recv_forward(
+                self.is_pipeline_first_stage(),
+                sync_recv=False,
+                batch_p2p_comm=self._use_batch_p2p_comm,
+            )
+        )
+
+        for micro_step in range(startup_steps_fthenb):
+            output_tensor = self._forward_step_helper(micro_dataset, micro_step)
+            recv_prev = True
+            if self.is_pipeline_first_stage(ignore_virtual=True):
+                if micro_step < self.num_stages - 2:
+                    recv_prev = False
+
+            input_tensor = self._p2p_helper.send_forward_recv_forward(
+                output_tensor,
+                recv_prev=recv_prev,
+                batch_p2p_comm=self._use_batch_p2p_comm,
+                skip_check_meta=not self.training,
+            )
+            # if self.is_pipeline_first_stage(ignore_virtual=True):
+            #     if next_virtual_pp_rank == 0:
+            #         self.input_tensors[0].append(None)
+            #     if input_tensor is not None:
+            #         pos = (
+            #             micro_step - self.num_stages + 2
+            #         ) // self.accumulate_steps + 1
+            #         self.input_tensors[pos].append(input_tensor)
+            # else:
+            #     self.input_tensors[next_virtual_pp_rank].append(input_tensor)
+
+            self._release_output(output_tensor)
+
+        logger.info("Successfully completed the startup phase of FThenB")
+        logger.info(
+            f"{self.input_tensors}, {self.output_tensors}, {self.output_tensor_grads}"
+        )
+
+        steady_steps_1f1b = self.accumulate_steps - (
+            self.num_stages - self.stage_id - 1
+        )
+
+        for micro_step in range(steady_steps_1f1b):
+            last_iter = micro_step == (steady_steps_1f1b - 1)
+
+            forward_micro_step_id = micro_step + startup_steps_fthenb
+            output_tensor = self._forward_step_helper(
+                micro_dataset, forward_micro_step_id
+            )
+
+            output_tensor_grad = self._p2p_helper.send_forward_recv_backward(
+                output_tensor,
+                self.is_pipeline_last_stage(ignore_virtual=True),
+                batch_p2p_comm=self._use_batch_p2p_comm,
+            )
+
+            backward_micro_step_id = micro_step
+            backward_virtual_pp_rank = self._get_virtual_pp_rank(
+                backward_micro_step_id, forward=False
+            )
+            self.output_tensor_grads[backward_virtual_pp_rank].append(
+                output_tensor_grad
+            )
+
+            input_tensor_grad = self._backward_step_helper(
+                backward_micro_step_id
+            )
+
+            if last_iter:
+                input_tensor = None
+                self._p2p_helper.send_backward(
+                    input_tensor_grad,
+                    self.is_pipeline_first_stage(ignore_virtual=True),
+                    batch_p2p_comm=self._use_batch_p2p_comm,
+                )
+            else:
+                input_tensor = self._p2p_helper.send_backward_recv_forward(
+                    input_tensor_grad,
+                    self.is_pipeline_first_stage(ignore_virtual=True),
+                    batch_p2p_comm=self._use_batch_p2p_comm,
+                )
+
+                next_virtual_pp_rank = self._get_virtual_pp_rank(
+                    forward_micro_step_id + 1, forward=True
+                )
+                if not self.is_pipeline_first_stage(ignore_virtual=True):
+                    self.input_tensors[next_virtual_pp_rank].append(
+                        input_tensor
+                    )
+
+        logger.info("Successfully completed the startup phase of 1F1B")
+        logger.info(
+            f"{self.input_tensors}, {self.output_tensors}, {self.output_tensor_grads}"
+        )
+
+        # run 1F1B cooldown
+        # for micro_step in range(self.num_stages - self.stage_id - 1):
+        #     output_tensor_grad = self._p2p_helper.recv_backward(
+        #         self.is_pipeline_last_stage(ignore_virtual=True),
+        #         batch_p2p_comm=self._use_batch_p2p_comm,
+        #     )
+        #     backward_micro_step_id =  micro_step + steady_steps_1f1b
+        #     input_tensor_grad = self._backward_step_helper(backward_micro_step_id)
+        #     self._p2p_helper.send_backward(
+        #         input_tensor_grad,
+        #         self.is_pipeline_first_stage(ignore_virtual=True),
+        #         batch_p2p_comm=self._use_batch_p2p_comm,
+        #     )
+
+        # logger.info("Successfully completed the cooldown phase of 1F1B")
+        # logger.info(f"{self.input_tensors}, {self.output_tensors}, {self.output_tensor_grads}")
+
+        # run FThenB cooldown
+
+        # self.output_tensor_grads[].append(
+        #     self._p2p_helper.recv_backward(
+        #         self.is_pipeline_last_stage(ignore_virtual=True),
+        #         sync_recv=False,
+        #         batch_p2p_comm=self._use_batch_p2p_comm,
+        #     )
+        # )
